@@ -1,0 +1,85 @@
+Build a production-quality “TaskFlow” system with **two clients** (Web + Mobile) and a shared backend, inspired by my existing desktop app repo **taskflow-desktop**. The new project must preserve the same core behavior and UX principles from the desktop version: Google OAuth 2.0 Authorization Code Flow with **PKCE**, secure token handling, Google Tasks lists + tasks, offline-first caching with background refresh, fast rendering with virtualization, and premium modern UI with smooth transitions and theme support. ([GitHub][1])
+
+### Tech & repo layout
+
+Create a **monorepo** using pnpm workspaces (or Turborepo). Use **TypeScript everywhere**.
+
+* `apps/web`: Next.js (App Router) + Tailwind + Framer Motion for premium UI and animations.
+* `apps/mobile`: React Native with Expo + TypeScript. Use NativeWind (Tailwind-like) and Reanimated for smooth transitions.
+* `apps/server`: Node.js + TypeScript backend (Fastify or Express). This backend owns OAuth tokens and calls Google APIs.
+* `packages/shared`: shared types (Task, TaskList, User, ChatCommand), zod schemas, API client, utilities.
+
+### Core requirements (must match TaskFlow Desktop behaviors)
+
+1. **Google OAuth PKCE**
+   Implement OAuth 2.0 Authorization Code with PKCE for web and mobile sign-in flows. After sign-in, store refresh tokens securely on the backend (encrypt at rest). Never log tokens. Provide a “Connect” screen like the desktop app. The desktop app used PKCE and secure token storage and emphasizes no secrets in repo. ([GitHub][1])
+
+* Web: use Google OAuth with PKCE (no client secret in frontend).
+* Mobile: use Expo AuthSession to obtain authorization code, then exchange on backend.
+
+2. **Google Tasks integration (lists + tasks)**
+   Implement reading task lists and tasks, plus CRUD for tasks:
+
+* list task lists
+* list tasks for a list
+* create task
+* complete/uncomplete
+* update title/notes/due
+* delete task
+  Support sorting by due date, created time, completion status.
+
+3. **Offline-first cache + background refresh**
+   Both web and mobile must work offline:
+
+* Use TanStack Query with persistence (IndexedDB on web, AsyncStorage on mobile).
+* Cache task lists and tasks per user.
+* On reconnect, do background refresh and show “last synced” status.
+  This mirrors the desktop app’s offline-first cache + background refresh. ([GitHub][1])
+
+4. **Search, filter, sort + virtualization**
+   Implement fast UI:
+
+* global search across tasks (title + notes)
+* filters: completed, due today, overdue, no due date
+* sort: due asc/desc, created, alphabetical
+* virtualization for long task lists (react-window on web; FlashList or SectionList optimization on mobile)
+  Desktop version mentions search/filter/sort and virtualized rendering. ([GitHub][1])
+
+5. **Premium UI + theme**
+   Web: glassy cards, subtle shadows, motion transitions, responsive layout, dark/light theme toggle.
+   Mobile: equivalent “premium” feel with consistent spacing, smooth transitions, and a compact chat/task dashboard.
+
+### AI Chat integration (must be real and demoable)
+
+Add an “AI Assistant” chat tab in both web + mobile:
+
+* User can type natural language: “Add ‘Finish DBMS notes’ due Sunday 7pm”, “Reschedule it to Monday 9am”, “What’s my next task?”, “Am I free for 45 minutes right now?”
+* The server calls an LLM (OpenAI or compatible) and converts user text into a **strict JSON command** validated with zod.
+* Supported actions: `add_task`, `update_task`, `reschedule_task`, `complete_task`, `delete_task`, `list_today`, `search_tasks`, and `check_availability_now`.
+* Implement `check_availability_now` using Google Calendar events for the next N minutes (simple overlap detection). If Calendar isn’t enabled, return a graceful message and still work for Tasks.
+
+Important: The AI must never directly execute unsafe operations. Always parse → validate → execute. Return a friendly confirmation message + updated task list.
+
+### Provider abstraction (future-proof like desktop)
+
+Create a `TaskProvider` interface in `packages/shared` so the system can later add Microsoft To Do, similar to the desktop repo’s provider interface concept. ([GitHub][1])
+Implement `GoogleTasksProvider` now; include a stub `MicrosoftToDoProvider` with TODOs.
+
+### Backend API design
+
+Expose REST endpoints used by both clients:
+
+* `POST /auth/google/start` and `POST /auth/google/callback` (PKCE exchange)
+* `GET /me`
+* `GET /tasklists`
+* `GET /tasklists/:id/tasks`
+* `POST /tasks`
+* `PATCH /tasks/:id`
+* `DELETE /tasks/:id`
+* `POST /ai/command`
+* `GET /availability/now?minutes=45`
+
+Use sessions or JWT for client auth. Encrypt stored tokens. Add rate limiting and basic request logging (no sensitive data). Include `.env.example`.
+
+### README + Hackathon requirements
+
