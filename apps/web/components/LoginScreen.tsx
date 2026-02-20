@@ -1,32 +1,45 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+import { useRouter } from "next/navigation";
+import { supabase } from "../lib/supabase";
 
 export default function LoginScreen() {
-  const [message, setMessage] = useState("Connect your Google account.");
+  const router = useRouter();
+  const [message, setMessage] = useState("Sign in with your email and password.");
   const [loading, setLoading] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    supabase.auth.getSession().then(({ data }) => {
+      if (!active) return;
+      if (data.session) router.replace("/");
+    });
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) router.replace("/");
+    });
+    return () => {
+      active = false;
+      listener.subscription.unsubscribe();
+    };
+  }, [router]);
 
   async function connect() {
     setLoading(true);
     try {
-      const res = await fetch(`${API_URL}/auth/google/callback`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: "mock" })
-      });
-      const data = await res.json();
-      if (data.token) {
-        localStorage.setItem("taskflow_token", data.token);
-        setMessage("Connected. Tokens stored on the server.");
-        window.location.href = "/";
-      } else {
-        setMessage(data.error ?? "Connection failed.");
+      if (!email || !password) {
+        setMessage("Email and password required.");
+        return;
       }
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      setMessage("Signed in. Redirecting...");
+      router.replace("/");
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Connection failed.");
+      setMessage(err instanceof Error ? err.message : "Auth failed.");
     } finally {
       setLoading(false);
     }
@@ -49,22 +62,37 @@ export default function LoginScreen() {
               Connect Google Tasks securely.
             </h1>
             <p className="text-white/70">
-              OAuth tokens are stored on the server in the database. This app
-              never stores secrets in the browser.
+              Auth is handled by Supabase. Your session token is used to access
+              the API securely.
             </p>
+            <div className="space-y-3">
+              <input
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Email"
+                className="w-full rounded-lg bg-white/10 px-3 py-2 text-sm"
+              />
+              <input
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Password"
+                type="password"
+                className="w-full rounded-lg bg-white/10 px-3 py-2 text-sm"
+              />
+            </div>
             <button
               onClick={connect}
               disabled={loading}
               className="glass px-6 py-3 rounded-full text-sm disabled:opacity-60"
             >
-              {loading ? "Connecting..." : "Connect Google"}
+              {loading ? "Working..." : "Sign in"}
             </button>
             <p className="text-xs text-white/60">{message}</p>
           </div>
 
           <div className="space-y-4">
             <div className="glass rounded-2xl p-5">
-              <p className="text-sm text-white/70">What gets stored</p>
+              <p className="text-sm text-white/70">Stored server-side</p>
               <ul className="mt-3 space-y-2 text-sm text-white/60">
                 <li>Encrypted Google refresh token</li>
                 <li>User profile (email + name)</li>

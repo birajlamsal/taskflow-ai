@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
+import { supabase } from "../lib/supabase";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -15,7 +17,9 @@ type Task = {
 };
 
 export default function AppShell() {
+  const router = useRouter();
   const [token, setToken] = useState<string | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
   const [lists, setLists] = useState<TaskList[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [activeList, setActiveList] = useState<string>("inbox");
@@ -24,22 +28,30 @@ export default function AppShell() {
   const [message, setMessage] = useState("Connect to start.");
 
   useEffect(() => {
-    const stored = localStorage.getItem("taskflow_token");
-    if (stored) setToken(stored);
+    let active = true;
+    supabase.auth.getSession().then(({ data }) => {
+      if (!active) return;
+      setToken(data.session?.access_token ?? null);
+      setAuthChecked(true);
+    });
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setToken(session?.access_token ?? null);
+    });
+    return () => {
+      active = false;
+      listener.subscription.unsubscribe();
+    };
   }, []);
 
-  async function connect() {
-    const res = await fetch(`${API_URL}/auth/google/callback`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code: "mock" })
-    });
-    const data = await res.json();
-    if (data.token) {
-      localStorage.setItem("taskflow_token", data.token);
-      setToken(data.token);
-      setMessage("Connected");
+  useEffect(() => {
+    if (!authChecked) return;
+    if (!token) {
+      router.push("/login");
     }
+  }, [token, authChecked, router]);
+
+  async function connect() {
+    setMessage("Use the Login page to authenticate.");
   }
 
   async function loadLists(t = token) {
@@ -48,8 +60,9 @@ export default function AppShell() {
       headers: { Authorization: `Bearer ${t}` }
     });
     const data = await res.json();
-    setLists(data);
-    if (data[0]) setActiveList(data[0].id);
+    const safe = Array.isArray(data) ? data : [];
+    setLists(safe);
+    if (safe[0]) setActiveList(safe[0].id);
   }
 
   async function loadTasks(listId = activeList, t = token) {
@@ -58,7 +71,7 @@ export default function AppShell() {
       headers: { Authorization: `Bearer ${t}` }
     });
     const data = await res.json();
-    setTasks(data);
+    setTasks(Array.isArray(data) ? data : []);
   }
 
   useEffect(() => {
@@ -105,9 +118,17 @@ export default function AppShell() {
   }
 
   const completedCount = useMemo(
-    () => tasks.filter((t) => t.completed).length,
+    () => (Array.isArray(tasks) ? tasks.filter((t) => t.completed).length : 0),
     [tasks]
   );
+
+  if (!authChecked) {
+    return null;
+  }
+
+  if (!token) {
+    return null;
+  }
 
   return (
     <div className="min-h-screen px-6 py-8">
@@ -119,20 +140,18 @@ export default function AppShell() {
             </p>
             <h1 className="text-3xl font-semibold">Flow through tasks.</h1>
           </div>
-          {!token ? (
+          {token ? (
             <div className="flex items-center gap-3">
-              <a href="/login" className="text-sm text-white/70 hover:text-white">
-                Login
-              </a>
-              <button
-                onClick={connect}
-                className="glass px-5 py-2 rounded-full text-sm"
+              <a
+                href="/settings"
+                className="text-sm text-white/70 hover:text-white"
               >
-                Connect Google
-              </button>
+                Settings
+              </a>
+              <div className="text-sm text-white/70">Connected</div>
             </div>
           ) : (
-            <div className="text-sm text-white/70">Connected</div>
+            <div className="text-sm text-white/70">Redirecting to login…</div>
           )}
         </header>
 

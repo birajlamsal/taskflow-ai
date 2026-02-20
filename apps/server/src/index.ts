@@ -4,6 +4,7 @@ import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import crypto from "crypto";
 import fetch from "node-fetch";
+import jwt from "jsonwebtoken";
 import {
   chatCommandSchema,
   type ChatCommand,
@@ -28,7 +29,8 @@ const PORT = Number(process.env.PORT ?? 4000);
 
 const TOKEN_KEY = process.env.TOKEN_ENCRYPTION_KEY ?? "dev_insecure_key";
 const SESSION_SECRET = process.env.SESSION_SECRET ?? "dev_session_secret";
-const USE_MOCK_AUTH = process.env.USE_MOCK_AUTH !== "false";
+const SUPABASE_JWT_SECRET = process.env.SUPABASE_JWT_SECRET ?? "";
+const USE_MOCK_AUTH = process.env.USE_MOCK_AUTH === "true" || !SUPABASE_JWT_SECRET;
 
 const users = new Map<string, User>();
 const sessions = new Map<string, string>();
@@ -66,9 +68,36 @@ function signSession(userId: string) {
 function requireAuth(req: { headers: Record<string, string | undefined> }) {
   const auth = req.headers.authorization ?? "";
   const token = auth.replace("Bearer ", "").trim();
-  const userId = sessions.get(token);
-  if (!userId) return null;
-  return users.get(userId) ?? null;
+  if (!token) return null;
+
+  if (!SUPABASE_JWT_SECRET && USE_MOCK_AUTH) {
+    const userId = sessions.get(token);
+    if (!userId) return null;
+    return users.get(userId) ?? null;
+  }
+
+  if (!SUPABASE_JWT_SECRET) return null;
+  try {
+    const payload = jwt.verify(token, SUPABASE_JWT_SECRET) as {
+      sub?: string;
+      email?: string;
+      user_metadata?: { name?: string; full_name?: string; avatar_url?: string };
+    };
+    if (!payload?.sub || !payload?.email) return null;
+    const existing = users.get(payload.sub);
+    if (existing) return existing;
+    const user: User = {
+      id: payload.sub,
+      email: payload.email,
+      name: payload.user_metadata?.full_name ?? payload.user_metadata?.name,
+      picture: payload.user_metadata?.avatar_url
+    };
+    users.set(user.id, user);
+    ensureSeed(user.id);
+    return user;
+  } catch {
+    return null;
+  }
 }
 
 function ensureSeed(userId: string) {
@@ -84,13 +113,30 @@ function ensureSeed(userId: string) {
 
 app.get("/health", async () => ({ status: "ok" }));
 
+app.get("/status", async () => {
+  return {
+    server: "ok",
+    db: {
+      configured: Boolean(process.env.DATABASE_URL)
+    },
+    auth: {
+      supabaseConfigured: Boolean(process.env.SUPABASE_JWT_SECRET)
+    }
+  };
+});
+
 app.post("/auth/google/start", async () => {
   if (USE_MOCK_AUTH) {
     return { authUrl: "mock://auth?state=demo" };
   }
-  return {
-    authUrl: "https://accounts.google.com/o/oauth2/v2/auth"
-  };
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const redirectUri = process.env.GOOGLE_REDIRECT_URI;
+  if (!clientId || !redirectUri) {
+    return {
+      error: "Google OAuth not configured. Set GOOGLE_CLIENT_ID and GOOGLE_REDIRECT_URI."
+    };
+  }
+  return { authUrl: "https://accounts.google.com/o/oauth2/v2/auth" };
 });
 
 app.post("/auth/google/callback", async (req) => {

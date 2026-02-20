@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@taskflow/shared": "workspace:*",
+    "@supabase/supabase-js": "^2.49.1",
     "@tanstack/react-query": "^5.51.1",
     "@tanstack/react-query-persist-client": "^5.51.1",
     "@tanstack/query-persist-client-core": "^5.51.1",

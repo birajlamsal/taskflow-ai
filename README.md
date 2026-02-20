@@ -29,6 +29,11 @@ Clients can override API URL:
 - Web: `NEXT_PUBLIC_API_URL`
 - Mobile: `EXPO_PUBLIC_API_URL`
 
+Supabase Auth env placeholders:
+- Web: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- Mobile: `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`
+- Server: `SUPABASE_JWT_SECRET` (used to verify JWTs)
+
 ## Notes
 - OAuth PKCE flow is scaffolded. Real exchange needs Google credentials and token persistence.
 - AI command uses OpenAI when configured; otherwise falls back to a safe heuristic parser.
