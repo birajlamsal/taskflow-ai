@@ -50,6 +50,7 @@ export default function AppShell() {
   >("selected");
   const [savingTaskIds, setSavingTaskIds] = useState<Record<string, boolean>>({});
   const [lastSynced, setLastSynced] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
   const [taskStatusEdits, setTaskStatusEdits] = useState<
     Record<string, "open" | "completed">
   >({});
@@ -406,22 +407,62 @@ export default function AppShell() {
             transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
           >
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-ink-600">
-                  {allTasks.length} tasks • {completedCount} done
-                </p>
-                <p className="text-xs text-ink-400">{message}</p>
-              </div>
 
               {googleConnected ? (
                 <div className="glass rounded-2xl px-4 py-3">
-                  <p className="text-xs uppercase tracking-[0.3em] text-ink-400">
-                    Overview
-                  </p>
-                  <p className="text-lg font-semibold">Task summary</p>
-                  <p className="text-xs text-ink-500">
-                    {allTasks.length} total • {completedCount} done
-                  </p>
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.3em] text-ink-400">
+                        Overview
+                      </p>
+                      <p className="text-lg font-semibold">Task summary</p>
+                      <p className="text-xs text-ink-500">
+                        {allTasks.length} total • {completedCount} done
+                      </p>
+                    </div>
+                    <motion.button
+                      onClick={async () => {
+                        if (syncing) return;
+                        setSyncing(true);
+                        await loadAllTasks(lists, token);
+                        setSyncing(false);
+                      }}
+                      animate={syncing ? {
+                        x: [0, -2, 2, -1.5, 1.5, -1, 1, 0],
+                        transition: { duration: 0.5, repeat: Infinity, ease: "easeInOut" }
+                      } : { x: 0 }}
+                      className="relative overflow-hidden glass px-4 py-2 rounded-full text-xs font-semibold cursor-pointer"
+                      style={{
+                        boxShadow: syncing
+                          ? "0 0 0 2px rgba(76,224,210,0.3), 0 0 16px rgba(76,224,210,0.4), 0 0 32px rgba(76,224,210,0.2)"
+                          : undefined,
+                      }}
+                    >
+                      {/* shimmer sweep */}
+                      {syncing && (
+                        <motion.span
+                          className="absolute inset-0 rounded-full pointer-events-none"
+                          style={{
+                            background:
+                              "linear-gradient(105deg, transparent 20%, rgba(76,224,210,0.55) 50%, transparent 80%)",
+                            backgroundSize: "200% 100%",
+                          }}
+                          animate={{ backgroundPosition: ["200% 0", "-200% 0"] }}
+                          transition={{ duration: 0.9, repeat: Infinity, ease: "linear" }}
+                        />
+                      )}
+                      {/* pulsing outer glow ring */}
+                      {syncing && (
+                        <motion.span
+                          className="absolute -inset-[3px] rounded-full pointer-events-none"
+                          style={{ border: "1.5px solid rgba(76,224,210,0.6)", borderRadius: "9999px" }}
+                          animate={{ opacity: [0.4, 1, 0.4], scale: [1, 1.06, 1] }}
+                          transition={{ duration: 1.2, repeat: Infinity, ease: "easeInOut" }}
+                        />
+                      )}
+                      <span className="relative z-10">{syncing ? "Syncing…" : "Sync"}</span>
+                    </motion.button>
+                  </div>
                 </div>
               ) : null}
 
@@ -465,7 +506,7 @@ export default function AppShell() {
 
 
               <div className="space-y-4">
-                <div className="h-[45vh]">
+                <div className="glass-card rounded-[2rem] p-6">
                   <CalendarView
                     month={calendarMonth}
                     selected={selectedDate ?? undefined}
@@ -680,10 +721,12 @@ function CalendarView({
   onChangeMonth: (value: Date) => void;
   tasks: Task[];
 }) {
+  const today = new Date();
+  const todayKey = toDateKey(today);
   const start = new Date(month.getFullYear(), month.getMonth(), 1);
   const end = new Date(month.getFullYear(), month.getMonth() + 1, 0);
   const startOffset = start.getDay();
-  const days = [];
+  const days: (Date | null)[] = [];
   for (let i = 0; i < startOffset; i += 1) days.push(null);
   for (let day = 1; day <= end.getDate(); day += 1) {
     days.push(new Date(month.getFullYear(), month.getMonth(), day));
@@ -703,90 +746,95 @@ function CalendarView({
   );
 
   return (
-    <div className="glass-card rounded-[2rem] p-6 space-y-6">
+    <div className="space-y-5">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-xs uppercase tracking-[0.3em] text-accent-600 font-bold">Calendar</p>
-          <p className="text-2xl font-display font-bold text-ink-900">
-            {month.toLocaleString(undefined, { month: "long", year: "numeric" })}
+          <p className="text-[10px] uppercase tracking-[0.3em] text-accent-600 font-semibold mb-0.5">
+            {month.toLocaleString(undefined, { year: "numeric" })}
+          </p>
+          <p className="text-xl font-display font-bold text-ink-900 leading-none">
+            {month.toLocaleString(undefined, { month: "long" })}
           </p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-1">
           <motion.button
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
-            onClick={() =>
-              onChangeMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))
-            }
-            className="glass w-10 h-10 rounded-full flex items-center justify-center text-xs transition-colors hover:bg-white"
+            whileHover={{ scale: 1.08 }}
+            whileTap={{ scale: 0.92 }}
+            onClick={() => onChangeMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}
+            className="w-8 h-8 rounded-full flex items-center justify-center text-ink-400 hover:text-ink-900 hover:bg-ink-900/5 dark:hover:bg-white/10 transition-all"
           >
-            ◀
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M9 11L5 7L9 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
           </motion.button>
           <motion.button
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
-            onClick={() =>
-              onChangeMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))
-            }
-            className="glass w-10 h-10 rounded-full flex items-center justify-center text-xs transition-colors hover:bg-white"
+            whileHover={{ scale: 1.08 }}
+            whileTap={{ scale: 0.92 }}
+            onClick={() => onChangeMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))}
+            className="w-8 h-8 rounded-full flex items-center justify-center text-ink-400 hover:text-ink-900 hover:bg-ink-900/5 dark:hover:bg-white/10 transition-all"
           >
-            ▶
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M5 3L9 7L5 11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
           </motion.button>
         </div>
       </div>
-      <div className="grid grid-cols-7 gap-3 text-[10px] uppercase font-bold text-ink-400 tracking-wider">
-        {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
-          <div key={d} className="text-center">
+
+      {/* Day-of-week labels */}
+      <div className="grid grid-cols-7 mb-1">
+        {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => (
+          <div key={i} className="text-center text-[10px] font-semibold text-ink-400 tracking-widest uppercase py-1">
             {d}
           </div>
         ))}
       </div>
-      <div className="grid grid-cols-7 gap-3">
+
+      {/* Day cells */}
+      <div className="grid grid-cols-7 gap-y-1">
         {days.map((date, idx) => {
           if (!date) return <div key={`empty-${idx}`} />;
           const key = toDateKey(date);
           const isSelected = toDateKey(selected) === key;
+          const isTodayDate = key === todayKey;
           const indicator = indicators[key];
-          const glow =
-            indicator?.missed
-              ? "ring-2 ring-sunset-500/50"
-              : indicator?.today
-                ? "ring-2 ring-accent-500/50 shadow-glow"
-                : indicator?.upcoming
-                  ? "ring-1 ring-ink-900/10"
-                  : "";
+          const dotColor = indicator?.missed
+            ? "bg-sunset-500"
+            : indicator?.today
+              ? "bg-accent-500"
+              : indicator?.upcoming
+                ? "bg-ink-400/50"
+                : null;
+
           return (
-            <motion.button
-              key={key}
-              whileHover={{ scale: 1.1, y: -2 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => onSelect(date)}
-              className={`h-12 rounded-2xl text-sm font-bold transition-all duration-300 ${glow} ${isSelected ? "bg-accent-500 text-ink-900 shadow-glow scale-105" : "bg-white/50 dark:bg-white/5 text-ink-700 dark:text-ink-400 hover:bg-white/80 dark:hover:bg-white/10"
-                }`}
-            >
-              <div className="flex flex-col items-center leading-none">
-                <span>{date.getDate()}</span>
-                {indicator?.missed ? (
-                  <motion.span
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    className="mt-1 h-1.5 w-1.5 rounded-full bg-sunset-500"
-                  />
-                ) : indicator?.today ? (
-                  <motion.span
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    className="mt-1 h-1.5 w-1.5 rounded-full bg-accent-600 shadow-[0_0_8px_rgba(43,185,173,0.5)]"
-                  />
-                ) : indicator?.upcoming ? (
-                  <motion.span
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    className="mt-1 h-1.5 w-1.5 rounded-full bg-ink-900/40"
-                  />
-                ) : null}
-              </div>
-            </motion.button>
+            <div key={key} className="flex flex-col items-center gap-[3px] py-0.5">
+              <motion.button
+                whileHover={{ scale: 1.12 }}
+                whileTap={{ scale: 0.9 }}
+                onClick={() => onSelect(date)}
+                className={`
+                  relative w-8 h-8 rounded-full text-sm font-medium flex items-center justify-center transition-all duration-200
+                  ${isSelected
+                    ? "bg-accent-500 text-ink-900 font-bold shadow-[0_0_12px_rgba(76,224,210,0.35)]"
+                    : isTodayDate
+                      ? "text-accent-600 font-bold"
+                      : "text-ink-700 dark:text-ink-400 hover:bg-ink-900/5 dark:hover:bg-white/8"
+                  }
+                `}
+              >
+                {date.getDate()}
+                {/* Today underline (when not selected) */}
+                {isTodayDate && !isSelected && (
+                  <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-4 h-[2px] rounded-full bg-accent-500" />
+                )}
+              </motion.button>
+              {/* Task dot */}
+              {dotColor ? (
+                <span className={`w-1 h-1 rounded-full ${dotColor} ${isSelected ? "opacity-0" : ""}`} />
+              ) : (
+                <span className="w-1 h-1" />
+              )}
+            </div>
           );
         })}
       </div>

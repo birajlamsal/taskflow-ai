@@ -134,6 +134,16 @@ body {
   @apply bg-ink-900 text-white shadow-glow hover:bg-ink-800;
 }
 
+.dark .primary-button.glow {
+  background-color: var(--accent-500);
+  color: #0b0f1a;
+  box-shadow: 0 0 24px rgba(76, 224, 210, 0.5);
+}
+
+.dark .primary-button.glow:hover {
+  background-color: var(--accent-600);
+}
+
 /* Premium Mesh Background */
 .mesh-bg::before {
   content: "";

@@ -132,13 +132,15 @@ export default function AICopilot() {
                     <div className="flex items-center justify-between mb-6">
                         <div>
                             <p className="text-xs uppercase tracking-[0.3em] text-accent-600 font-bold mb-1">Copilot</p>
-                            <h2 className="text-xl font-display font-bold text-ink-900">AI Assistant</h2>
+                            <h2 className="text-xl font-display font-bold text-ink-900 dark:text-ink-100">
+                                AI Assistant
+                            </h2>
                         </div>
                         <motion.button
                             whileHover={{ scale: 1.1, rotate: 90 }}
                             whileTap={{ scale: 0.9 }}
                             onClick={() => setChatOpen(false)}
-                            className="w-10 h-10 glass rounded-full flex items-center justify-center text-ink-600 hover:text-ink-900 shadow-sm"
+                            className="w-10 h-10 glass rounded-full flex items-center justify-center text-ink-600 hover:text-ink-900 dark:text-ink-300 dark:hover:text-white shadow-sm"
                         >
                             ✕
                         </motion.button>
@@ -149,7 +151,7 @@ export default function AICopilot() {
                         <select
                             value={selectedTool}
                             onChange={(e) => setSelectedTool(e.target.value)}
-                            className="w-full rounded-2xl bg-white/50 dark:bg-white/5 border border-white/20 px-4 py-3 text-sm font-medium text-ink-900 focus:outline-none focus:ring-2 focus:ring-accent-500/30 transition-all"
+                            className="w-full rounded-2xl bg-white/50 dark:bg-white/5 border border-white/20 px-4 py-3 text-sm font-medium text-ink-900 dark:text-ink-100 focus:outline-none focus:ring-2 focus:ring-accent-500/30 transition-all"
                         >
                             {aiTools.filter((tool) => configuredTools.includes(tool.id)).length ? (
                                 aiTools
@@ -173,7 +175,9 @@ export default function AICopilot() {
                                 <div className="w-16 h-16 bg-accent-500/20 rounded-full flex items-center justify-center mb-4">
                                     <div className="w-8 h-8 bg-accent-500 rounded-lg animate-pulse" />
                                 </div>
-                                <p className="text-sm font-medium text-ink-900">How can I help you today?</p>
+                                <p className="text-sm font-medium text-ink-900 dark:text-ink-100">
+                                    How can I help you today?
+                                </p>
                             </div>
                         ) : (
                             chatHistory.map((msg, idx) => (
@@ -183,7 +187,7 @@ export default function AICopilot() {
                                     animate={{ opacity: 1, y: 0 }}
                                     className={`max-w-[90%] rounded-[1.5rem] px-4 py-3 text-sm leading-relaxed ${msg.role === "user"
                                         ? "ml-auto bg-accent-500/80 text-white shadow-lift"
-                                        : "mr-auto glass-card text-ink-700 shadow-sm"
+                                        : "mr-auto glass-card text-ink-700 dark:text-ink-200 shadow-sm"
                                         }`}
                                 >
                                     {msg.text}
@@ -208,13 +212,13 @@ export default function AICopilot() {
                                 onChange={(e) => setChat(e.target.value)}
                                 onKeyDown={(e) => e.key === "Enter" && sendChat()}
                                 placeholder="Ask anything..."
-                                className="flex-1 min-w-0 bg-transparent px-3 py-3 text-sm font-medium text-ink-900 focus:outline-none placeholder:text-ink-400"
+                                className="flex-1 min-w-0 bg-transparent px-3 py-3 text-sm font-medium text-ink-900 dark:text-ink-100 focus:outline-none placeholder:text-ink-400 dark:placeholder:text-ink-500"
                             />
                             <motion.button
                                 whileHover={{ scale: 1.05 }}
                                 whileTap={{ scale: 0.95 }}
                                 onClick={sendChat}
-                                className="bg-ink-900 text-white px-4 rounded-xl text-sm font-bold shadow-glow hover:bg-ink-800 transition-colors shrink-0"
+                                className="bg-ink-900 text-white dark:bg-white/80 dark:text-ink-900 px-4 rounded-xl text-sm font-bold shadow-glow hover:bg-ink-800 dark:hover:bg-white transition-colors shrink-0"
                             >
                                 Send
                             </motion.button>
@@ -222,7 +226,7 @@ export default function AICopilot() {
                                 whileHover={{ scale: 1.05 }}
                                 whileTap={{ scale: 0.95 }}
                                 onClick={() => setChatOpen(false)}
-                                className="glass px-2.5 rounded-xl text-ink-600 hover:text-ink-900 transition-colors flex items-center justify-center shrink-0"
+                                className="glass px-2.5 rounded-xl text-ink-600 hover:text-ink-900 dark:text-ink-300 dark:hover:text-white transition-colors flex items-center justify-center shrink-0"
                                 title="Minimize Chat"
                             >
                                 ✕

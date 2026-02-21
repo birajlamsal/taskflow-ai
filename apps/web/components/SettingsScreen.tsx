@@ -224,7 +224,7 @@ export default function SettingsScreen() {
                             setAiKeys((prev) => ({ ...prev, [tool.id]: e.target.value }))
                           }
                           placeholder={`Paste ${tool.name} API key`}
-                          className="w-full rounded-2xl bg-white/70 px-3 py-2 pr-12 text-sm"
+                          className="w-full rounded-2xl bg-white/70 px-3 py-2 pr-12 text-sm text-ink-900 dark:text-ink-100"
                         />
                         <button
                           type="button"

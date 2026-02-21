@@ -61,58 +61,59 @@ export default function Navbar() {
               </span>
             </Link>
 
-            <div className="hidden md:flex items-center gap-4">
-              {[
-                { name: "Dashboard", href: "/" },
-                { name: "Settings", href: "/settings" },
-                { name: "Check", href: "/check" },
-              ].map((item) => {
-                const isActive = item.href === "/"
-                  ? pathname === "/"
-                  : pathname.startsWith(item.href);
+            {authed && (
+              <div className="hidden md:flex items-center gap-4">
+                {[
+                  { name: "Dashboard", href: "/dashboard" },
+                  { name: "Settings", href: "/settings" },
+                  { name: "Check", href: "/check" },
+                ].map((item) => {
+                  const isActive = pathname.startsWith(item.href);
 
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={`relative font-medium transition-all duration-300 px-4 py-2 rounded-full flex flex-col items-center group ${isActive
-                      ? "text-ink-900 scale-105"
-                      : "text-ink-500 hover:text-accent-500 dark:hover:text-accent-400"
-                      }`}
-                  >
-                    <span className={`transition-all duration-300 ${isActive ? "text-sm font-bold" : "text-xs group-hover:scale-110"}`}>
-                      {item.name}
-                    </span>
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={`relative font-medium transition-all duration-300 px-4 py-2 rounded-full flex flex-col items-center group ${isActive
+                        ? "text-ink-900 scale-105"
+                        : "text-ink-500 hover:text-accent-500 dark:hover:text-accent-400"
+                        }`}
+                    >
+                      <span className={`transition-all duration-300 ${isActive ? "text-sm font-bold" : "text-xs group-hover:scale-110"}`}>
+                        {item.name}
+                      </span>
 
-                    {isActive && (
-                      <>
-                        <motion.div
-                          layoutId="nav-underline"
-                          className="absolute -bottom-1 left-3 right-3 h-0.5 bg-accent-500 rounded-full shadow-[0_0_12px_rgba(43,185,173,0.8)]"
-                        />
-                        {/* Dashboard Glow Effect */}
-                        <motion.div
-                          layoutId="nav-glow"
-                          className="absolute -bottom-4 left-1/2 -translate-x-1/2 w-12 h-4 bg-accent-500/20 blur-xl rounded-full"
-                        />
-                      </>
-                    )}
-                  </Link>
-                );
-              })}
-            </div>
+                      {isActive && (
+                        <>
+                          <motion.div
+                            layoutId="nav-underline"
+                            className="absolute -bottom-1 left-3 right-3 h-0.5 bg-accent-500 rounded-full shadow-[0_0_12px_rgba(43,185,173,0.8)]"
+                          />
+                          <motion.div
+                            layoutId="nav-glow"
+                            className="absolute -bottom-4 left-1/2 -translate-x-1/2 w-12 h-4 bg-accent-500/20 blur-xl rounded-full"
+                          />
+                        </>
+                      )}
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-6">
             <ThemeToggle />
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={toggleChat}
-              className="text-xs font-semibold text-ink-600 hover:text-ink-900 transition-colors"
-            >
-              Assistant
-            </motion.button>
+            {authed && (
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={toggleChat}
+                className="text-xs font-semibold text-ink-600 hover:text-ink-900 transition-colors"
+              >
+                Assistant
+              </motion.button>
+            )}
             <AnimatePresence mode="wait">
               {!authed ? (
                 <motion.div

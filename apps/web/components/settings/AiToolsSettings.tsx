@@ -187,8 +187,8 @@ export default function AiToolsSettings() {
                         placeholder={`Paste ${tool.name} API key`}
                         className={`w-full rounded-2xl px-3 py-2 pr-12 text-sm ${
                           saved && !editing
-                            ? "bg-ink-900/10 text-ink-500"
-                            : "bg-white/70"
+                            ? "bg-ink-900/10 text-ink-500 dark:text-ink-300"
+                            : "bg-white/70 text-ink-900 dark:text-ink-900"
                         }`}
                         disabled={saved && !editing}
                         readOnly={saved && !editing}

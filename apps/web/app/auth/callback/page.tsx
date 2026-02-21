@@ -20,13 +20,13 @@ export default function AuthCallbackPage() {
           setMessage(error.message);
           return;
         }
-        router.replace("/");
+        router.replace("/dashboard");
         return;
       }
       const { data } = await supabase.auth.getSession();
       if (!active) return;
       if (data.session) {
-        router.replace("/");
+        router.replace("/dashboard");
       } else {
         setMessage("Authentication failed. Please try again.");
       }
