@@ -12,6 +12,33 @@ export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
+  async function signInWithGoogle() {
+    setLoading(true);
+    try {
+      const scopes = [
+        "https://www.googleapis.com/auth/tasks",
+        "https://www.googleapis.com/auth/userinfo.email",
+        "https://www.googleapis.com/auth/userinfo.profile",
+        "openid"
+      ].join(" ");
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          scopes,
+          queryParams: { access_type: "offline", prompt: "consent" },
+          redirectTo:
+            typeof window !== "undefined"
+              ? `${window.location.origin}/auth/callback`
+              : undefined
+        }
+      });
+      if (error) throw error;
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Google sign-in failed.");
+      setLoading(false);
+    }
+  }
+
   useEffect(() => {
     let active = true;
     supabase.auth.getSession().then(({ data }) => {
@@ -64,6 +91,16 @@ export default function LoginScreen() {
             <p className="text-ink-600">
               Auth is handled by Supabase. Your session token is used to access
               the API securely.
+            </p>
+            <button
+              onClick={signInWithGoogle}
+              disabled={loading}
+              className="glass px-6 py-3 rounded-full text-sm disabled:opacity-60"
+            >
+              Continue with Google
+            </button>
+            <p className="text-xs uppercase tracking-[0.3em] text-ink-400">
+              Or sign in with email
             </p>
             <div className="space-y-3">
               <input

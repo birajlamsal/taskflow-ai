@@ -21,26 +21,62 @@ export default function SettingsLayout({
   const [token, setToken] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [googleConnected, setGoogleConnected] = useState<boolean | null>(null);
+  const [linkedProviderToken, setLinkedProviderToken] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
     supabase.auth.getSession().then(({ data }) => {
       if (!active) return;
-      const access = data.session?.access_token ?? null;
+      const session = data.session;
+      const access = session?.access_token ?? null;
       setToken(access);
       setReady(true);
       if (!access) router.replace("/login");
+      const providerToken = (session as any)?.provider_token as string | undefined;
+      const providerRefresh = (session as any)?.provider_refresh_token as string | undefined;
+      if (access && providerToken && providerToken !== linkedProviderToken) {
+        fetch(`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000"}/google/link`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${access}`
+          },
+          body: JSON.stringify({
+            access_token: providerToken,
+            refresh_token: providerRefresh
+          })
+        }).finally(() => {
+          setLinkedProviderToken(providerToken);
+        });
+      }
     });
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       const access = session?.access_token ?? null;
       setToken(access);
       if (!access) router.replace("/login");
+      const providerToken = (session as any)?.provider_token as string | undefined;
+      const providerRefresh = (session as any)?.provider_refresh_token as string | undefined;
+      if (access && providerToken && providerToken !== linkedProviderToken) {
+        fetch(`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000"}/google/link`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${access}`
+          },
+          body: JSON.stringify({
+            access_token: providerToken,
+            refresh_token: providerRefresh
+          })
+        }).finally(() => {
+          setLinkedProviderToken(providerToken);
+        });
+      }
     });
     return () => {
       active = false;
       listener.subscription.unsubscribe();
     };
-  }, [router]);
+  }, [router, linkedProviderToken]);
 
   useEffect(() => {
     if (!token) return;

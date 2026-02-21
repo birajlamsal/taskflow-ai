@@ -117,6 +117,79 @@ function decrypt(value: string) {
   return Buffer.concat([decipher.update(data), decipher.final()]).toString("utf8");
 }
 
+async function getOAuthTokensFromDb(userId: string) {
+  if (!dbPool) return null;
+  const res = await dbPool.query<{
+    refresh_token_encrypted: string;
+    access_token_encrypted: string | null;
+    scope: string | null;
+    expires_at: string | null;
+  }>(
+    `select refresh_token_encrypted, access_token_encrypted, scope, expires_at
+     from public.oauth_accounts
+     where user_id = $1 and provider = 'google'
+     limit 1`,
+    [userId]
+  );
+  const row = res.rows[0];
+  if (!row) return null;
+  return {
+    refresh_token: row.refresh_token_encrypted
+      ? decrypt(row.refresh_token_encrypted)
+      : undefined,
+    access_token: row.access_token_encrypted ? decrypt(row.access_token_encrypted) : undefined,
+    scope: row.scope ?? undefined,
+    expires_at: row.expires_at ? new Date(row.expires_at).getTime() : undefined
+  };
+}
+
+async function saveOAuthTokensToDb(params: {
+  userId: string;
+  accessToken?: string;
+  refreshToken?: string;
+  scope?: string;
+  expiresAt?: number;
+}) {
+  if (!dbPool) return;
+  const { userId, accessToken, refreshToken, scope, expiresAt } = params;
+  if (refreshToken) {
+    await dbPool.query(
+      `insert into public.oauth_accounts
+       (user_id, provider, refresh_token_encrypted, access_token_encrypted, scope, expires_at)
+       values ($1, 'google', $2, $3, $4, $5)
+       on conflict (user_id, provider)
+       do update set
+         refresh_token_encrypted = excluded.refresh_token_encrypted,
+         access_token_encrypted = excluded.access_token_encrypted,
+         scope = excluded.scope,
+         expires_at = excluded.expires_at,
+         updated_at = now()`,
+      [
+        userId,
+        encrypt(refreshToken),
+        accessToken ? encrypt(accessToken) : null,
+        scope ?? null,
+        expiresAt ? new Date(expiresAt).toISOString() : null
+      ]
+    );
+  } else if (accessToken) {
+    await dbPool.query(
+      `update public.oauth_accounts
+       set access_token_encrypted = $2,
+           scope = $3,
+           expires_at = $4,
+           updated_at = now()
+       where user_id = $1 and provider = 'google'`,
+      [
+        userId,
+        encrypt(accessToken),
+        scope ?? null,
+        expiresAt ? new Date(expiresAt).toISOString() : null
+      ]
+    );
+  }
+}
+
 async function getGoogleLists(userId: string) {
   const accessToken = await getGoogleAccessToken(userId);
   if (!accessToken) return [];
@@ -333,7 +406,18 @@ async function refreshGoogleAccessToken(refreshToken: string) {
 }
 
 async function getGoogleAccessToken(userId: string) {
-  const tokens = userTokens.get(userId);
+  let tokens = userTokens.get(userId);
+  if (!tokens) {
+    const dbTokens = await getOAuthTokensFromDb(userId);
+    if (dbTokens?.access_token || dbTokens?.refresh_token) {
+      tokens = {
+        access_token: dbTokens.access_token ?? "",
+        refresh_token: dbTokens.refresh_token,
+        expires_at: dbTokens.expires_at
+      };
+      userTokens.set(userId, tokens);
+    }
+  }
   if (!tokens) return null;
   const now = Date.now();
   if (tokens.access_token && (!tokens.expires_at || tokens.expires_at > now + 30_000)) {
@@ -346,6 +430,14 @@ async function getGoogleAccessToken(userId: string) {
     access_token: refreshed.access_token,
     expires_in: refreshed.expires_in,
     expires_at: refreshed.expires_in ? Date.now() + refreshed.expires_in * 1000 : undefined
+  });
+  await saveOAuthTokensToDb({
+    userId,
+    accessToken: refreshed.access_token,
+    refreshToken: tokens.refresh_token,
+    expiresAt: refreshed.expires_in
+      ? Date.now() + refreshed.expires_in * 1000
+      : undefined
   });
   return refreshed.access_token;
 }
@@ -1167,6 +1259,9 @@ app.post("/ai/command", async (req, reply) => {
         userAiKeys.get(user.id)!.set(toolId, userKey);
       }
     }
+    if (toolId === "openai" && !userKey && !process.env.OPENAI_API_KEY) {
+      return reply.status(400).send({ error: "API key missing for openai" });
+    }
     if (toolId !== "openai" && !userKey) {
       return reply.status(400).send({ error: `API key missing for ${toolId}` });
     }
@@ -1528,9 +1623,11 @@ app.get("/google/status", async (req, reply) => {
   const user = requireAuth(req);
   if (!user) return reply.status(401).send({ error: "Unauthorized" });
   const tokens = userTokens.get(user.id);
-  return {
-    connected: Boolean(tokens?.refresh_token || tokens?.access_token)
-  };
+  if (tokens?.refresh_token || tokens?.access_token) {
+    return { connected: true };
+  }
+  const dbTokens = await getOAuthTokensFromDb(user.id);
+  return { connected: Boolean(dbTokens?.refresh_token || dbTokens?.access_token) };
 });
 
 app.get("/google/ping", async (req, reply) => {
@@ -1568,6 +1665,42 @@ app.get("/google/profile", async (req, reply) => {
     email: data.email,
     picture: data.picture
   };
+});
+
+app.post("/google/link", async (req, reply) => {
+  const user = requireAuth(req);
+  if (!user) return reply.status(401).send({ error: "Unauthorized" });
+  const body = req.body as {
+    access_token?: string;
+    refresh_token?: string;
+    expires_at?: number;
+    expires_in?: number;
+    scope?: string;
+  };
+  if (!body?.access_token) {
+    return reply.status(400).send({ error: "access_token required" });
+  }
+  const expiresAt =
+    body.expires_at ??
+    (body.expires_in ? Date.now() + body.expires_in * 1000 : undefined);
+  userTokens.set(user.id, {
+    access_token: body.access_token,
+    refresh_token: body.refresh_token,
+    expires_at: expiresAt,
+    expires_in: body.expires_in
+  });
+  try {
+    await saveOAuthTokensToDb({
+      userId: user.id,
+      accessToken: body.access_token,
+      refreshToken: body.refresh_token,
+      scope: body.scope,
+      expiresAt
+    });
+  } catch {
+    // ignore db save errors for now
+  }
+  return reply.send({ ok: true });
 });
 
 app.get("/auth/debug", async (req, reply) => {

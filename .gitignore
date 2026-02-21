@@ -9,3 +9,14 @@ build
 .expo
 .expo-shared
 *.log
+.DS_Store
+coverage
+.pnpm-debug.log*
+.eslintcache
+.vercel
+.output
+.parcel-cache
+ios/Pods
+ios/build
+android/build
+android/app/build

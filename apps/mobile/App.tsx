@@ -8,6 +8,8 @@ import {
   TouchableOpacity,
   View
 } from "react-native";
+import * as Linking from "expo-linking";
+import * as WebBrowser from "expo-web-browser";
 import { supabase } from "./lib/supabase";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:4000";
@@ -17,6 +19,7 @@ type Task = { id: string; title: string; completed?: boolean; listId: string };
 
 export default function App() {
   const [token, setToken] = useState<string | null>(null);
+  const [linkedProviderToken, setLinkedProviderToken] = useState<string | null>(null);
   const [lists, setLists] = useState<TaskList[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [activeList, setActiveList] = useState("inbox");
@@ -30,15 +33,54 @@ export default function App() {
     let active = true;
     supabase.auth.getSession().then(({ data }) => {
       if (!active) return;
-      setToken(data.session?.access_token ?? null);
+      const session = data.session;
+      setToken(session?.access_token ?? null);
+      const providerToken = (session as any)?.provider_token as string | undefined;
+      const providerRefresh = (session as any)?.provider_refresh_token as string | undefined;
+      if (session?.access_token && providerToken && providerToken !== linkedProviderToken) {
+        fetch(`${API_URL}/google/link`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`
+          },
+          body: JSON.stringify({
+            access_token: providerToken,
+            refresh_token: providerRefresh
+          })
+        }).finally(() => {
+          setLinkedProviderToken(providerToken);
+        });
+      }
     });
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       setToken(session?.access_token ?? null);
+      const providerToken = (session as any)?.provider_token as string | undefined;
+      const providerRefresh = (session as any)?.provider_refresh_token as string | undefined;
+      if (session?.access_token && providerToken && providerToken !== linkedProviderToken) {
+        fetch(`${API_URL}/google/link`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`
+          },
+          body: JSON.stringify({
+            access_token: providerToken,
+            refresh_token: providerRefresh
+          })
+        }).finally(() => {
+          setLinkedProviderToken(providerToken);
+        });
+      }
     });
     return () => {
       active = false;
       listener.subscription.unsubscribe();
     };
+  }, [linkedProviderToken]);
+
+  useEffect(() => {
+    WebBrowser.maybeCompleteAuthSession();
   }, []);
 
   async function connect() {
@@ -61,6 +103,39 @@ export default function App() {
       return;
     }
     setMessage("Signed in.");
+  }
+
+  async function signInWithGoogle() {
+    const scopes = [
+      "https://www.googleapis.com/auth/tasks",
+      "https://www.googleapis.com/auth/userinfo.email",
+      "https://www.googleapis.com/auth/userinfo.profile",
+      "openid"
+    ].join(" ");
+    const redirectTo = Linking.createURL("auth/callback");
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        scopes,
+        queryParams: { access_type: "offline", prompt: "consent" },
+        redirectTo
+      }
+    });
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+    if (data?.url) {
+      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+      if (result.type === "success") {
+        const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(
+          result.url
+        );
+        if (exchangeError) {
+          setMessage(exchangeError.message);
+        }
+      }
+    }
   }
 
   async function loadLists(t = token) {
@@ -115,6 +190,10 @@ export default function App() {
 
       {!token ? (
         <View style={styles.authCard}>
+          <TouchableOpacity style={styles.googleButton} onPress={signInWithGoogle}>
+            <Text style={styles.googleButtonText}>Continue with Google</Text>
+          </TouchableOpacity>
+          <Text style={styles.orText}>or sign in with email</Text>
           <View style={styles.authTabs}>
             <TouchableOpacity
               onPress={() => setMode("signin")}
@@ -240,6 +319,21 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 16,
     gap: 10
+  },
+  googleButton: {
+    backgroundColor: "#ffffff",
+    paddingVertical: 12,
+    borderRadius: 999
+  },
+  googleButtonText: {
+    color: "#0b0f1a",
+    textAlign: "center",
+    fontWeight: "600"
+  },
+  orText: {
+    color: "rgba(255,255,255,0.5)",
+    fontSize: 12,
+    textAlign: "center"
   },
   authTabs: {
     flexDirection: "row",

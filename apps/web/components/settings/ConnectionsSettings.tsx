@@ -7,7 +7,6 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 export default function ConnectionsSettings() {
   const { token } = useSettingsAuth();
-  const [message, setMessage] = useState("Connect Google Tasks to sync lists.");
   const [googleConnected, setGoogleConnected] = useState<boolean | null>(null);
   const [profile, setProfile] = useState<{
     name?: string;
@@ -56,28 +55,6 @@ export default function ConnectionsSettings() {
     };
   }, [token]);
 
-  async function connectGoogle() {
-    if (!token) return;
-    setMessage("Starting Google OAuth...");
-    try {
-      const res = await fetch(`${API_URL}/auth/google/start`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data?.error ?? `Failed with ${res.status}`);
-      }
-      if (data.authUrl) {
-        window.location.href = data.authUrl;
-        return;
-      }
-      setMessage(data.error ?? "Unable to start Google OAuth.");
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Unable to start Google OAuth.");
-    }
-  }
-
   return (
     <div className="space-y-6">
       <div>
@@ -88,7 +65,7 @@ export default function ConnectionsSettings() {
       <div className="rounded-2xl bg-ink-900/5 p-5 space-y-3">
         <p className="text-sm text-ink-600">Google Tasks</p>
         <p className="text-sm text-ink-500">
-          Connect your Google account to sync task lists and tasks.
+          Google is linked through Supabase Google login.
         </p>
         {googleConnected ? (
           <div className="flex items-center gap-3 rounded-2xl bg-ink-900/5 px-3 py-2">
@@ -107,10 +84,13 @@ export default function ConnectionsSettings() {
             </div>
           </div>
         ) : null}
-        <button onClick={connectGoogle} className="glass px-5 py-2 rounded-full text-sm">
-          {googleConnected ? "Reconnect Google" : "Connect Google"}
-        </button>
-        <p className="text-xs text-ink-500">{message}</p>
+        {googleConnected ? (
+          <p className="text-xs text-ink-500">Connected via Google sign-in.</p>
+        ) : (
+          <p className="text-xs text-ink-500">
+            Sign out and sign in with Google to connect your Tasks.
+          </p>
+        )}
       </div>
     </div>
   );

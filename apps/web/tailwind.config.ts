@@ -2,30 +2,32 @@ import type { Config } from "tailwindcss";
 
 const config: Config = {
   content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}"],
+  darkMode: "class",
   theme: {
     extend: {
       colors: {
         ink: {
-          900: "#0b0f1a",
-          800: "#111726",
-          700: "#1a2134",
-          600: "#28324a",
-          500: "#3b4a6a"
+          900: "var(--ink-900)",
+          800: "var(--ink-800)",
+          700: "var(--ink-700)",
+          600: "var(--ink-600)",
+          500: "var(--ink-500)",
+          400: "var(--ink-400)"
         },
         pearl: {
-          50: "#f7f7fb",
-          100: "#eceff6",
-          200: "#d6dceb",
-          300: "#b7c0da"
+          50: "var(--pearl-50)",
+          100: "var(--pearl-100)",
+          200: "var(--pearl-200)",
+          300: "var(--pearl-300)"
         },
         accent: {
-          500: "#4ce0d2",
-          600: "#2bb9ad",
-          700: "#1a8a84"
+          500: "var(--accent-500)",
+          600: "var(--accent-600)",
+          700: "var(--accent-700)"
         },
         sunset: {
-          500: "#ff9f6e",
-          600: "#f68145"
+          500: "var(--sunset-500)",
+          600: "var(--sunset-600)"
         }
       },
       fontFamily: {

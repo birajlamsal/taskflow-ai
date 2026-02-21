@@ -2,10 +2,21 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "../lib/supabase";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+
+const GREETINGS = [
+  { text: "Hello", lang: "English" },
+  { text: "नमस्ते", lang: "Nepali" },
+  { text: "Hola", lang: "Spanish" },
+  { text: "Bonjour", lang: "French" },
+  { text: "Ciao", lang: "Italian" },
+  { text: "こんにちは", lang: "Japanese" },
+  { text: "안녕하세요", lang: "Korean" },
+  { text: "Habari", lang: "Swahili" },
+];
 
 type TaskList = { id: string; title: string };
 type Task = {
@@ -24,13 +35,6 @@ export default function AppShell() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [allTasks, setAllTasks] = useState<Task[]>([]);
   const [activeList, setActiveList] = useState<string>("inbox");
-  const [chat, setChat] = useState("");
-  const [chatHistory, setChatHistory] = useState<
-    Array<{ role: "user" | "assistant"; text: string }>
-  >([]);
-  const [aiTools, setAiTools] = useState<Array<{ id: string; name: string }>>([]);
-  const [configuredTools, setConfiguredTools] = useState<string[]>([]);
-  const [selectedTool, setSelectedTool] = useState("openai");
   const [message, setMessage] = useState("Connect to start.");
   const [displayName, setDisplayName] = useState<string | null>(null);
   const [apiConnected, setApiConnected] = useState<boolean | null>(null);
@@ -44,29 +48,71 @@ export default function AppShell() {
   const [calendarScope, setCalendarScope] = useState<
     "missed" | "today" | "upcoming" | "completed" | "selected"
   >("selected");
-  const [chatOpen, setChatOpen] = useState(true);
+  const [savingTaskIds, setSavingTaskIds] = useState<Record<string, boolean>>({});
   const [lastSynced, setLastSynced] = useState<string | null>(null);
   const [taskStatusEdits, setTaskStatusEdits] = useState<
     Record<string, "open" | "completed">
   >({});
-  const [savingTaskIds, setSavingTaskIds] = useState<Record<string, boolean>>({});
-  const [aiTyping, setAiTyping] = useState(false);
+  const [linkedProviderToken, setLinkedProviderToken] = useState<string | null>(null);
+  const [greetingIndex, setGreetingIndex] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setGreetingIndex((prev: number) => (prev + 1) % GREETINGS.length);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     let active = true;
     supabase.auth.getSession().then(({ data }) => {
       if (!active) return;
-      setToken(data.session?.access_token ?? null);
+      const session = data.session;
+      setToken(session?.access_token ?? null);
+      const providerToken = (session as any)?.provider_token as string | undefined;
+      const providerRefresh = (session as any)?.provider_refresh_token as string | undefined;
+      if (session?.access_token && providerToken && providerToken !== linkedProviderToken) {
+        fetch(`${API_URL}/google/link`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`
+          },
+          body: JSON.stringify({
+            access_token: providerToken,
+            refresh_token: providerRefresh
+          })
+        }).finally(() => {
+          setLinkedProviderToken(providerToken);
+        });
+      }
       setAuthChecked(true);
     });
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       setToken(session?.access_token ?? null);
+      const providerToken = (session as any)?.provider_token as string | undefined;
+      const providerRefresh = (session as any)?.provider_refresh_token as string | undefined;
+      if (session?.access_token && providerToken && providerToken !== linkedProviderToken) {
+        fetch(`${API_URL}/google/link`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`
+          },
+          body: JSON.stringify({
+            access_token: providerToken,
+            refresh_token: providerRefresh
+          })
+        }).finally(() => {
+          setLinkedProviderToken(providerToken);
+        });
+      }
     });
     return () => {
       active = false;
       listener.subscription.unsubscribe();
     };
-  }, []);
+  }, [linkedProviderToken]);
 
   useEffect(() => {
     if (!token) return;
@@ -92,53 +138,6 @@ export default function AppShell() {
     };
   }, [token]);
 
-  useEffect(() => {
-    let active = true;
-    fetch(`${API_URL}/ai/tools`)
-      .then(async (res) => {
-        if (!active) return;
-        const data = await res.json();
-        setAiTools(Array.isArray(data.tools) ? data.tools : []);
-      })
-      .catch(() => {
-        if (!active) return;
-        setAiTools([]);
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!token) return;
-    let active = true;
-    fetch(`${API_URL}/ai/keys`, {
-      headers: { Authorization: `Bearer ${token}` }
-    })
-      .then(async (res) => {
-        if (!active) return;
-        if (!res.ok) {
-          setConfiguredTools([]);
-          return;
-        }
-        const data = (await res.json()) as { tools?: string[] };
-        setConfiguredTools(Array.isArray(data.tools) ? data.tools : []);
-      })
-      .catch(() => {
-        if (!active) return;
-        setConfiguredTools([]);
-      });
-    return () => {
-      active = false;
-    };
-  }, [token]);
-
-  useEffect(() => {
-    if (!configuredTools.length) return;
-    if (!configuredTools.includes(selectedTool)) {
-      setSelectedTool(configuredTools[0]);
-    }
-  }, [configuredTools, selectedTool]);
 
   useEffect(() => {
     if (!token) return;
@@ -197,15 +196,6 @@ export default function AppShell() {
     }
   }, [token, authChecked, router]);
 
-  useEffect(() => {
-    function handleToggle() {
-      setChatOpen((prev) => !prev);
-    }
-    window.addEventListener("taskflow:toggle-chat", handleToggle);
-    return () => {
-      window.removeEventListener("taskflow:toggle-chat", handleToggle);
-    };
-  }, []);
 
   async function connect() {
     setMessage("Use the Login page to authenticate.");
@@ -244,12 +234,12 @@ export default function AppShell() {
   async function loadAllTasks(currentLists = lists, t = token) {
     if (!t || currentLists.length === 0) return;
     const results = await Promise.all(
-      currentLists.map(async (list) => {
+      currentLists.map(async (list: TaskList) => {
         const res = await fetch(`${API_URL}/tasklists/${list.id}/tasks`, {
           headers: { Authorization: `Bearer ${t}` }
         });
         const data = await res.json();
-        return Array.isArray(data) ? data : [];
+        return Array.isArray(data) ? (data as Task[]) : [];
       })
     );
     setAllTasks(results.flat());
@@ -282,40 +272,19 @@ export default function AppShell() {
     }
   }, [lists, token]);
 
-  async function sendChat() {
-    if (!token || !chat.trim()) return;
-    const prompt = chat.trim();
-    setChatHistory((prev) => [...prev, { role: "user", text: prompt }]);
-    setAiTyping(true);
-    const res = await fetch(`${API_URL}/ai/command`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`
-      },
-      body: JSON.stringify({ text: prompt, toolId: selectedTool })
-    });
-    try {
-      const data = await res.json();
-      setMessage(data.message ?? "Command executed");
-      if (Array.isArray(data.tasks)) setTasks(data.tasks);
-      if (data.message) {
-        setChatHistory((prev) => [...prev, { role: "assistant", text: data.message }]);
+  useEffect(() => {
+    function refresh() {
+      if (token) {
+        loadLists(token);
       }
-    } catch {
-      setChatHistory((prev) => [
-        ...prev,
-        { role: "assistant", text: "Something went wrong." }
-      ]);
-    } finally {
-      setAiTyping(false);
-      setChat("");
     }
-  }
+    window.addEventListener("taskflow:refresh-tasks", refresh);
+    return () => window.removeEventListener("taskflow:refresh-tasks", refresh);
+  }, [token]);
 
   async function saveTaskStatus(taskId: string, listId: string, status: "open" | "completed") {
     if (!token) return;
-    setSavingTaskIds((prev) => ({ ...prev, [taskId]: true }));
+    setSavingTaskIds((prev: Record<string, boolean>) => ({ ...prev, [taskId]: true }));
     try {
       const res = await fetch(`${API_URL}/tasks/${taskId}`, {
         method: "PATCH",
@@ -345,7 +314,7 @@ export default function AppShell() {
     } catch {
       setMessage("Failed to update task.");
     } finally {
-      setSavingTaskIds((prev) => ({ ...prev, [taskId]: false }));
+      setSavingTaskIds((prev: Record<string, boolean>) => ({ ...prev, [taskId]: false }));
     }
   }
 
@@ -391,309 +360,267 @@ export default function AppShell() {
   }
 
   return (
-    <div className="min-h-screen px-6 py-8">
-      <div className="max-w-6xl mx-auto space-y-6">
-        <header className="flex items-center justify-between">
+    <div className="min-h-screen px-6 pb-12">
+      <div className="max-w-6xl mx-auto space-y-12">
+        <motion.header
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8 }}
+          className="flex items-center justify-between"
+        >
           <div>
-            <p className="text-sm uppercase tracking-[0.3em] text-ink-400">
-              TaskFlow
-            </p>
-            <h1 className="text-3xl font-semibold">
-              Hello{displayName ? `, ${displayName}` : ""}.
+            <motion.p
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.2 }}
+              className="text-xs uppercase tracking-[0.4em] text-accent-600 font-bold mb-2"
+            >
+              TaskFlow AI
+            </motion.p>
+            <h1 className="text-5xl font-display font-bold text-ink-900 tracking-tight flex items-center gap-3">
+              <div className="relative inline-flex items-center justify-center min-w-[200px] h-16">
+                <AnimatePresence mode="wait">
+                  <motion.span
+                    key={GREETINGS[greetingIndex].text}
+                    initial={{ y: 20, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    exit={{ y: -20, opacity: 0 }}
+                    transition={{ duration: 0.8, ease: "circOut" }}
+                    className="absolute"
+                  >
+                    {GREETINGS[greetingIndex].text}
+                  </motion.span>
+                </AnimatePresence>
+              </div>
+              <span className="text-gradient font-black">{displayName ? `, ${displayName}` : ""}</span>.
             </h1>
-            <p className="text-sm text-ink-500">Flow through tasks.</p>
+            <p className="text-lg text-ink-500 mt-2 font-medium">Flow through tasks with intelligence.</p>
           </div>
-        </header>
+        </motion.header>
 
-        <div className="relative space-y-6">
+        <div className="relative space-y-12">
           <motion.section
-            className={`glass rounded-2xl p-6 space-y-4 ${chatOpen ? "lg:pr-[320px]" : ""}`}
-            initial={{ opacity: 0, y: 12 }}
+            className="glass rounded-[2.5rem] p-8 space-y-8"
+            initial={{ opacity: 0, y: 40 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4 }}
+            transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
           >
             <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm text-ink-600">
-                    {allTasks.length} tasks • {completedCount} done
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-ink-600">
+                  {allTasks.length} tasks • {completedCount} done
+                </p>
+                <p className="text-xs text-ink-400">{message}</p>
+              </div>
+
+              {googleConnected ? (
+                <div className="glass rounded-2xl px-4 py-3">
+                  <p className="text-xs uppercase tracking-[0.3em] text-ink-400">
+                    Overview
                   </p>
-                  <p className="text-xs text-ink-400">{message}</p>
+                  <p className="text-lg font-semibold">Task summary</p>
+                  <p className="text-xs text-ink-500">
+                    {allTasks.length} total • {completedCount} done
+                  </p>
                 </div>
+              ) : null}
 
-                {googleConnected ? (
-                  <div className="glass rounded-2xl px-4 py-3">
-                    <p className="text-xs uppercase tracking-[0.3em] text-ink-400">
-                      Overview
-                    </p>
-                    <p className="text-lg font-semibold">Task summary</p>
+              {apiConnected !== true || apiStatus?.dbConfigured === false ? (
+                <div className="glass rounded-2xl p-4 flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium">Connect the API</p>
                     <p className="text-xs text-ink-500">
-                      {allTasks.length} total • {completedCount} done
+                      {apiConnected === false
+                        ? "Your backend is not reachable."
+                        : apiStatus?.dbConfigured === false
+                          ? "Database is not configured."
+                          : "Complete API configuration in Settings."}
                     </p>
                   </div>
-                ) : null}
+                  <a
+                    href="/settings"
+                    className="glass px-4 py-2 rounded-full text-sm"
+                  >
+                    Connect API
+                  </a>
+                </div>
+              ) : null}
 
-                {apiConnected !== true || apiStatus?.dbConfigured === false ? (
-                  <div className="glass rounded-2xl p-4 flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium">Connect the API</p>
-                      <p className="text-xs text-ink-500">
-                        {apiConnected === false
-                          ? "Your backend is not reachable."
-                          : apiStatus?.dbConfigured === false
-                            ? "Database is not configured."
-                            : "Complete API configuration in Settings."}
-                      </p>
+              {googleConnected === false ? (
+                <div className="glass rounded-2xl p-4 flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium">Connect Google</p>
+                    <p className="text-xs text-ink-500">
+                      Link Google Tasks to sync your lists and tasks.
+                    </p>
+                  </div>
+                  <a
+                    href="/settings"
+                    className="glass px-4 py-2 rounded-full text-sm"
+                  >
+                    Connect Google
+                  </a>
+                </div>
+              ) : null}
+
+
+              <div className="space-y-4">
+                <div className="h-[45vh]">
+                  <CalendarView
+                    month={calendarMonth}
+                    selected={selectedDate ?? undefined}
+                    onSelect={(date) => {
+                      setSelectedDate(date);
+                      setCalendarScope("selected");
+                    }}
+                    onChangeMonth={setCalendarMonth}
+                    tasks={allTasks}
+                  />
+                </div>
+                <div className="glass rounded-2xl p-4 space-y-4">
+                  {googleConnected ? (
+                    <div className="flex flex-wrap gap-2 text-xs font-semibold">
+                      <button
+                        onClick={() => {
+                          setCalendarScope("missed");
+                          setSelectedDate(null);
+                        }}
+                        className={`rounded-full px-4 py-2 ${calendarScope === "missed"
+                          ? "bg-sunset-500/80 text-ink-900"
+                          : "bg-white/70 dark:bg-white/5 text-ink-700 dark:text-ink-500"
+                          }`}
+                      >
+                        Missed
+                      </button>
+                      <button
+                        onClick={() => {
+                          setCalendarScope("today");
+                          setSelectedDate(null);
+                        }}
+                        className={`rounded-full px-4 py-2 ${calendarScope === "today"
+                          ? "bg-accent-500/80 text-ink-900"
+                          : "bg-white/70 dark:bg-white/5 text-ink-700 dark:text-ink-500"
+                          }`}
+                      >
+                        Today
+                      </button>
+                      <button
+                        onClick={() => {
+                          setCalendarScope("upcoming");
+                          setSelectedDate(null);
+                        }}
+                        className={`rounded-full px-4 py-2 ${calendarScope === "upcoming"
+                          ? "bg-accent-500/10 dark:bg-accent-500/40 text-ink-900"
+                          : "bg-white/70 dark:bg-white/5 text-ink-700 dark:text-ink-500"
+                          }`}
+                      >
+                        Upcoming
+                      </button>
+                      <button
+                        onClick={() => {
+                          setCalendarScope("completed");
+                          setSelectedDate(null);
+                        }}
+                        className={`rounded-full px-4 py-2 ${calendarScope === "completed"
+                          ? "bg-emerald-500/10 dark:bg-emerald-500/40 text-ink-900"
+                          : "bg-white/70 dark:bg-white/5 text-ink-700 dark:text-ink-500"
+                          }`}
+                      >
+                        Completed
+                      </button>
+                      <button
+                        onClick={() => {
+                          setCalendarScope("selected");
+                          setSelectedDate(new Date());
+                        }}
+                        className={`rounded-full px-4 py-2 ${calendarScope === "selected"
+                          ? "bg-accent-500/10 dark:bg-accent-500/40 text-ink-900"
+                          : "bg-white/70 dark:bg-white/5 text-ink-700 dark:text-ink-500"
+                          }`}
+                      >
+                        Selected Day
+                      </button>
                     </div>
-                    <a
-                      href="/settings"
-                      className="glass px-4 py-2 rounded-full text-sm"
-                    >
-                      Connect API
-                    </a>
-                  </div>
-                ) : null}
+                  ) : null}
 
-                {googleConnected === false ? (
-                  <div className="glass rounded-2xl p-4 flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium">Connect Google</p>
-                      <p className="text-xs text-ink-500">
-                        Link Google Tasks to sync your lists and tasks.
-                      </p>
-                    </div>
-                    <a
-                      href="/settings"
-                      className="glass px-4 py-2 rounded-full text-sm"
-                    >
-                      Connect Google
-                    </a>
-                  </div>
-                ) : null}
-
-
-                <div className="space-y-4">
-                  <div className="h-[45vh]">
-                    <CalendarView
-                      month={calendarMonth}
-                      selected={selectedDate ?? undefined}
-                      onSelect={(date) => {
-                        setSelectedDate(date);
-                        setCalendarScope("selected");
-                      }}
-                      onChangeMonth={setCalendarMonth}
-                      tasks={allTasks}
-                    />
-                  </div>
-                  <div className="glass rounded-2xl p-4 space-y-4">
-                    {googleConnected ? (
-                      <div className="flex flex-wrap gap-2 text-xs font-semibold">
-                        <button
-                          onClick={() => {
-                            setCalendarScope("missed");
-                            setSelectedDate(null);
-                          }}
-                          className={`rounded-full px-4 py-2 ${
-                            calendarScope === "missed"
-                              ? "bg-sunset-500/80 text-ink-900"
-                              : "bg-white/70 text-ink-700"
-                          }`}
-                        >
-                          Missed
-                        </button>
-                        <button
-                          onClick={() => {
-                            setCalendarScope("today");
-                            setSelectedDate(null);
-                          }}
-                          className={`rounded-full px-4 py-2 ${
-                            calendarScope === "today"
-                              ? "bg-accent-500/80 text-ink-900"
-                              : "bg-white/70 text-ink-700"
-                          }`}
-                        >
-                          Today
-                        </button>
-                        <button
-                          onClick={() => {
-                            setCalendarScope("upcoming");
-                            setSelectedDate(null);
-                          }}
-                          className={`rounded-full px-4 py-2 ${
-                            calendarScope === "upcoming"
-                              ? "bg-ink-900/10 text-ink-900"
-                              : "bg-white/70 text-ink-700"
-                          }`}
-                        >
-                          Upcoming
-                        </button>
-                        <button
-                          onClick={() => {
-                            setCalendarScope("completed");
-                            setSelectedDate(null);
-                          }}
-                          className={`rounded-full px-4 py-2 ${
-                            calendarScope === "completed"
-                              ? "bg-emerald-500/60 text-ink-900"
-                              : "bg-white/70 text-ink-700"
-                          }`}
-                        >
-                          Completed
-                        </button>
-                        <button
-                          onClick={() => {
-                            setCalendarScope("selected");
-                            setSelectedDate(new Date());
-                          }}
-                          className={`rounded-full px-4 py-2 ${
-                            calendarScope === "selected"
-                              ? "bg-ink-900/10 text-ink-900"
-                              : "bg-white/70 text-ink-700"
-                          }`}
-                        >
-                          Selected Day
-                        </button>
-                      </div>
-                    ) : null}
-
-                    <div>
-                      <p className="text-sm font-medium">
-                        {calendarScope === "missed"
-                          ? "Missed tasks"
-                          : calendarScope === "completed"
-                            ? "Completed tasks"
-                            : selectedDate
-                              ? `Tasks for ${selectedDate.toDateString()}`
-                              : "Tasks for selected date"}
-                      </p>
-                      {tasksForSelectedDate.length ? (
-                        <div className="mt-3 space-y-2">
-                          {tasksForSelectedDate.map((task) => {
+                  <div>
+                    <p className="text-sm font-medium">
+                      {calendarScope === "missed"
+                        ? "Missed tasks"
+                        : calendarScope === "completed"
+                          ? "Completed tasks"
+                          : selectedDate
+                            ? `Tasks for ${selectedDate.toDateString()}`
+                            : "Tasks for selected date"}
+                    </p>
+                    {tasksForSelectedDate.length ? (
+                      <motion.div
+                        layout
+                        className="mt-3 space-y-2"
+                      >
+                        <AnimatePresence mode="popLayout">
+                          {tasksForSelectedDate.map((task, index) => {
                             const currentStatus = task.completed ? "completed" : "open";
                             const selectedStatus =
                               taskStatusEdits[task.id] ?? currentStatus;
                             const dirty = selectedStatus !== currentStatus;
                             const saving = Boolean(savingTaskIds[task.id]);
                             return (
-                              <div key={task.id} className="glass rounded-xl px-4 py-3">
+                              <motion.div
+                                layout
+                                whileHover={{ scale: 1.01 }}
+                                key={task.id}
+                                initial={{ opacity: 0, x: -20 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                exit={{ opacity: 0, scale: 0.95 }}
+                                transition={{ delay: index * 0.05, duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+                                className="glass-card rounded-xl px-4 py-3"
+                              >
                                 <div className="flex items-center justify-between gap-3">
                                   <p className="text-sm font-medium">{task.title}</p>
                                   <div className="flex items-center gap-2">
                                     <select
                                       value={selectedStatus}
                                       onChange={(e) =>
-                                        setTaskStatusEdits((prev) => ({
+                                        setTaskStatusEdits((prev: Record<string, "open" | "completed">) => ({
                                           ...prev,
                                           [task.id]: e.target.value as
                                             | "open"
                                             | "completed"
                                         }))
                                       }
-                                      className="rounded-lg bg-ink-900/5 px-3 py-2 text-xs"
+                                      className="rounded-lg bg-ink-900/5 px-3 py-2 text-xs transition-colors hover:bg-ink-900/10 focus:outline-none focus:ring-2 focus:ring-accent-500/30"
                                     >
                                       <option value="open">To Do</option>
                                       <option value="completed">Done</option>
                                     </select>
-                                    <button
+                                    <motion.button
+                                      whileHover={{ scale: 1.05 }}
+                                      whileTap={{ scale: 0.95 }}
                                       onClick={() =>
                                         saveTaskStatus(task.id, task.listId, selectedStatus)
                                       }
                                       disabled={!dirty || saving}
-                                      className="glass px-3 py-2 rounded-lg text-xs disabled:opacity-50"
+                                      className="primary-button !px-3 !py-2 rounded-lg text-xs disabled:opacity-50 !bg-accent-500/10 !text-accent-700 hover:!bg-accent-500/20"
                                     >
                                       {saving ? "Saving..." : "Save"}
-                                    </button>
+                                    </motion.button>
                                   </div>
                                 </div>
-                              </div>
+                              </motion.div>
                             );
                           })}
-                        </div>
-                      ) : (
-                        <p className="text-xs text-ink-500 mt-2">No tasks here.</p>
-                      )}
-                    </div>
+                        </AnimatePresence>
+                      </motion.div>
+                    ) : (
+                      <p className="text-xs text-ink-500 mt-2">No tasks here.</p>
+                    )}
                   </div>
                 </div>
+              </div>
             </div>
           </motion.section>
 
-          {chatOpen && googleConnected ? (
-            <motion.section
-              className="glass rounded-2xl p-4 flex flex-col h-[260px]"
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1, duration: 0.3 }}
-            >
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-sm text-ink-600">AI Assistant</p>
-                <button
-                  onClick={() => setChatOpen(false)}
-                  className="text-xs text-ink-600 hover:text-ink-900"
-                >
-                  Minimize
-                </button>
-              </div>
-              <div className="mb-2">
-                <select
-                  value={selectedTool}
-                  onChange={(e) => setSelectedTool(e.target.value)}
-                  className="w-full rounded-lg bg-ink-900/5 px-3 py-2 text-xs"
-                >
-                  {aiTools.filter((tool) => configuredTools.includes(tool.id)).length ? (
-                    aiTools
-                      .filter((tool) => configuredTools.includes(tool.id))
-                      .map((tool) => (
-                        <option key={tool.id} value={tool.id}>
-                          {tool.name}
-                        </option>
-                      ))
-                  ) : (
-                    <option value="" disabled>
-                      Add an API key in Settings
-                    </option>
-                  )}
-                </select>
-              </div>
-              <div className="flex-1 overflow-auto pr-2 space-y-2">
-                {chatHistory.length === 0 ? (
-                  <p className="text-xs text-ink-500">Ask something to get started.</p>
-                ) : (
-                  chatHistory.map((msg, idx) => (
-                    <div
-                      key={`${msg.role}-${idx}`}
-                      className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm ${
-                        msg.role === "user"
-                          ? "ml-auto bg-accent-500/30 text-ink-900"
-                          : "mr-auto bg-ink-900/5 text-ink-700"
-                      }`}
-                    >
-                      {msg.text}
-                    </div>
-                  ))
-                )}
-                {aiTyping ? (
-                  <div className="mr-auto max-w-[60%] rounded-2xl bg-ink-900/5 px-3 py-2 text-xs text-ink-600">
-                    <span className="inline-flex gap-1">
-                      <span className="h-1.5 w-1.5 rounded-full bg-ink-500 animate-bounce" />
-                      <span className="h-1.5 w-1.5 rounded-full bg-ink-500 animate-bounce [animation-delay:150ms]" />
-                      <span className="h-1.5 w-1.5 rounded-full bg-ink-500 animate-bounce [animation-delay:300ms]" />
-                    </span>
-                  </div>
-                ) : null}
-              </div>
-              <div className="mt-3 flex gap-2">
-                <input
-                  value={chat}
-                  onChange={(e) => setChat(e.target.value)}
-                  placeholder="Ask TaskFlow..."
-                  className="flex-1 rounded-lg bg-ink-900/5 px-3 py-2 text-sm"
-                />
-                <button onClick={sendChat} className="glass px-4 rounded-lg">
-                  Send
-                </button>
-              </div>
-            </motion.section>
-          ) : null}
         </div>
       </div>
     </div>
@@ -776,41 +703,45 @@ function CalendarView({
   );
 
   return (
-    <div className="glass rounded-2xl p-4 space-y-3">
+    <div className="glass-card rounded-[2rem] p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-xs uppercase tracking-[0.3em] text-ink-400">Calendar</p>
-          <p className="text-lg font-semibold">
+          <p className="text-xs uppercase tracking-[0.3em] text-accent-600 font-bold">Calendar</p>
+          <p className="text-2xl font-display font-bold text-ink-900">
             {month.toLocaleString(undefined, { month: "long", year: "numeric" })}
           </p>
         </div>
-        <div className="flex gap-2">
-          <button
+        <div className="flex gap-3">
+          <motion.button
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
             onClick={() =>
               onChangeMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))
             }
-            className="glass w-9 h-9 rounded-full text-xs"
+            className="glass w-10 h-10 rounded-full flex items-center justify-center text-xs transition-colors hover:bg-white"
           >
             ◀
-          </button>
-          <button
+          </motion.button>
+          <motion.button
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
             onClick={() =>
               onChangeMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))
             }
-            className="glass w-9 h-9 rounded-full text-xs"
+            className="glass w-10 h-10 rounded-full flex items-center justify-center text-xs transition-colors hover:bg-white"
           >
             ▶
-          </button>
+          </motion.button>
         </div>
       </div>
-      <div className="grid grid-cols-7 gap-2 text-[10px] uppercase text-ink-400">
+      <div className="grid grid-cols-7 gap-3 text-[10px] uppercase font-bold text-ink-400 tracking-wider">
         {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
           <div key={d} className="text-center">
             {d}
           </div>
         ))}
       </div>
-      <div className="grid grid-cols-7 gap-2">
+      <div className="grid grid-cols-7 gap-3">
         {days.map((date, idx) => {
           if (!date) return <div key={`empty-${idx}`} />;
           const key = toDateKey(date);
@@ -820,29 +751,42 @@ function CalendarView({
             indicator?.missed
               ? "ring-2 ring-sunset-500/50"
               : indicator?.today
-                ? "ring-2 ring-accent-500/50"
+                ? "ring-2 ring-accent-500/50 shadow-glow"
                 : indicator?.upcoming
-                  ? "ring-2 ring-ink-900/10"
+                  ? "ring-1 ring-ink-900/10"
                   : "";
           return (
-            <button
+            <motion.button
               key={key}
+              whileHover={{ scale: 1.1, y: -2 }}
+              whileTap={{ scale: 0.95 }}
               onClick={() => onSelect(date)}
-              className={`h-10 rounded-2xl text-sm font-semibold ${glow} ${
-                isSelected ? "bg-accent-500/70 text-ink-900" : "bg-white/70 text-ink-700"
-              }`}
+              className={`h-12 rounded-2xl text-sm font-bold transition-all duration-300 ${glow} ${isSelected ? "bg-accent-500 text-ink-900 shadow-glow scale-105" : "bg-white/50 dark:bg-white/5 text-ink-700 dark:text-ink-400 hover:bg-white/80 dark:hover:bg-white/10"
+                }`}
             >
               <div className="flex flex-col items-center leading-none">
                 <span>{date.getDate()}</span>
                 {indicator?.missed ? (
-                  <span className="mt-1 h-1.5 w-1.5 rounded-full bg-sunset-500" />
+                  <motion.span
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    className="mt-1 h-1.5 w-1.5 rounded-full bg-sunset-500"
+                  />
                 ) : indicator?.today ? (
-                  <span className="mt-1 h-1.5 w-1.5 rounded-full bg-accent-500" />
+                  <motion.span
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    className="mt-1 h-1.5 w-1.5 rounded-full bg-accent-600 shadow-[0_0_8px_rgba(43,185,173,0.5)]"
+                  />
                 ) : indicator?.upcoming ? (
-                  <span className="mt-1 h-1.5 w-1.5 rounded-full bg-ink-900/40" />
+                  <motion.span
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    className="mt-1 h-1.5 w-1.5 rounded-full bg-ink-900/40"
+                  />
                 ) : null}
               </div>
-            </button>
+            </motion.button>
           );
         })}
       </div>
