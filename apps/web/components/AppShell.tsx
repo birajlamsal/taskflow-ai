@@ -319,6 +319,30 @@ export default function AppShell() {
     }
   }
 
+  async function deleteTask(taskId: string, listId: string) {
+    if (!token) return;
+    setSavingTaskIds((prev) => ({ ...prev, [taskId]: true }));
+    try {
+      const res = await fetch(
+        `${API_URL}/tasks/${taskId}?listId=${encodeURIComponent(listId)}`,
+        {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` }
+        }
+      );
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setMessage(data?.error ?? "Failed to delete task.");
+        return;
+      }
+      setAllTasks((prev) => prev.filter((task) => task.id !== taskId));
+    } catch {
+      setMessage("Failed to delete task.");
+    } finally {
+      setSavingTaskIds((prev) => ({ ...prev, [taskId]: false }));
+    }
+  }
+
   const completedCount = useMemo(
     () => (Array.isArray(allTasks) ? allTasks.filter((t) => t.completed).length : 0),
     [allTasks]
@@ -645,6 +669,15 @@ export default function AppShell() {
                                       className="primary-button !px-3 !py-2 rounded-lg text-xs disabled:opacity-50 !bg-accent-500/10 !text-accent-700 hover:!bg-accent-500/20"
                                     >
                                       {saving ? "Saving..." : "Save"}
+                                    </motion.button>
+                                    <motion.button
+                                      whileHover={{ scale: 1.05 }}
+                                      whileTap={{ scale: 0.95 }}
+                                      onClick={() => deleteTask(task.id, task.listId)}
+                                      disabled={saving}
+                                      className="primary-button !px-3 !py-2 rounded-lg text-xs disabled:opacity-50 !bg-sunset-500/15 !text-sunset-600 hover:!bg-sunset-500/25"
+                                    >
+                                      Delete
                                     </motion.button>
                                   </div>
                                 </div>

@@ -11,7 +11,6 @@ export default function AiToolsSettings() {
   const [aiKeys, setAiKeys] = useState<Record<string, string>>({});
   const [aiKeyVisible, setAiKeyVisible] = useState<Record<string, boolean>>({});
   const [savedTools, setSavedTools] = useState<Set<string>>(new Set());
-  const [editingTools, setEditingTools] = useState<Set<string>>(new Set());
   const [aiStatus, setAiStatus] = useState<string | null>(null);
   const [aiTestStatus, setAiTestStatus] = useState<Record<string, string>>({});
   const [googleConnected, setGoogleConnected] = useState<boolean | null>(null);
@@ -101,6 +100,9 @@ export default function AiToolsSettings() {
     setAiStatus("Saved.");
     setAiKeys((prev) => ({ ...prev, [toolId]: "" }));
     setSavedTools((prev) => new Set([...prev, toolId]));
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("taskflow:ai-keys-updated"));
+    }
   }
 
   async function testAiKey(toolId: string) {
@@ -125,6 +127,37 @@ export default function AiToolsSettings() {
     setAiTestStatus((prev) => ({ ...prev, [toolId]: "Working" }));
   }
 
+  async function deleteAiKey(toolId: string) {
+    if (!token) return;
+    setAiStatus(null);
+    const res = await fetch(`${API_URL}/ai/keys?toolId=${encodeURIComponent(toolId)}`, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setAiStatus(data?.error ?? "Failed to delete API key.");
+      return;
+    }
+    setAiStatus("Deleted.");
+    setAiKeys((prev) => ({ ...prev, [toolId]: "" }));
+    setSavedTools((prev) => {
+      const next = new Set(prev);
+      next.delete(toolId);
+      return next;
+    });
+    setAiTestStatus((prev) => {
+      const next = { ...prev };
+      delete next[toolId];
+      return next;
+    });
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("taskflow:ai-keys-updated"));
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -132,116 +165,101 @@ export default function AiToolsSettings() {
         <h1 className="text-3xl font-semibold">AI Tools</h1>
       </div>
 
-      {googleConnected ? (
-        <div className="rounded-2xl bg-ink-900/5 p-5 space-y-3">
-          <p className="text-sm text-ink-600">Providers</p>
-          <p className="text-sm text-ink-500">
-            Add your AI provider API key to enable chat. Credentials will be hidden
-            after saving.
+      <div className="rounded-2xl bg-ink-900/5 p-5 space-y-3">
+        <p className="text-sm text-ink-600">Providers</p>
+        <p className="text-sm text-ink-500">
+          Add your AI provider API key to enable chat. Credentials will be hidden
+          after saving.
+        </p>
+        {googleConnected === false ? (
+          <p className="text-xs text-ink-400">
+            Google is not connected. Task actions may fail, but chat still works.
           </p>
-          <div className="space-y-3">
-            {(aiTools.length ? aiTools : [{ id: "openai", name: "OpenAI" }]).map(
-              (tool) => {
-                const saved = savedTools.has(tool.id);
-                const editing = editingTools.has(tool.id);
-                return (
-                  <div
-                    key={tool.id}
-                    className="flex flex-col gap-2 rounded-2xl bg-ink-900/5 p-3"
-                  >
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm font-medium">{tool.name}</p>
-                      <div className="flex items-center gap-2">
-                        {saved ? (
-                          <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-xs text-emerald-700">
-                            Saved
-                          </span>
-                        ) : null}
-                        {saved ? (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setEditingTools((prev) => {
-                                const next = new Set(prev);
-                                if (next.has(tool.id)) next.delete(tool.id);
-                                else next.add(tool.id);
-                                return next;
-                              })
-                            }
-                            className="rounded-full bg-ink-900/10 px-3 py-1 text-xs"
-                          >
-                            {editing ? "Cancel" : "Edit"}
-                          </button>
-                        ) : null}
-                      </div>
-                    </div>
-                    <div className="relative">
-                      <input
-                        type={aiKeyVisible[tool.id] ? "text" : "password"}
-                        value={
-                          saved && !editing ? "••••••••••••••••" : aiKeys[tool.id] ?? ""
-                        }
-                        onChange={(e) =>
-                          setAiKeys((prev) => ({ ...prev, [tool.id]: e.target.value }))
-                        }
-                        placeholder={`Paste ${tool.name} API key`}
-                        className={`w-full rounded-2xl px-3 py-2 pr-12 text-sm ${
-                          saved && !editing
-                            ? "bg-ink-900/10 text-ink-500 dark:text-ink-300"
-                            : "bg-white/70 text-ink-900 dark:text-ink-900"
-                        }`}
-                        disabled={saved && !editing}
-                        readOnly={saved && !editing}
-                      />
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setAiKeyVisible((prev) => ({
-                            ...prev,
-                            [tool.id]: !prev[tool.id]
-                          }))
-                        }
-                        className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-ink-900/10 px-3 py-1 text-xs"
-                        disabled={saved && !editing}
-                      >
-                        {aiKeyVisible[tool.id] ? "Hide" : "Show"}
-                      </button>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        onClick={() => saveAiKey(tool.id)}
-                        className="glass px-4 py-2 rounded-full text-sm"
-                        disabled={saved && !editing}
-                      >
-                        {saved ? (editing ? "Update" : "Added") : "Add"}
-                      </button>
-                      {saved && !editing ? (
-                        <button
-                          onClick={() => testAiKey(tool.id)}
-                          className="rounded-full bg-ink-900/10 px-4 py-2 text-sm"
-                        >
-                          Test
-                        </button>
+        ) : null}
+        <div className="space-y-3">
+          {(aiTools.length ? aiTools : [{ id: "openai", name: "OpenAI" }]).map(
+            (tool) => {
+              const saved = savedTools.has(tool.id);
+              return (
+                <div
+                  key={tool.id}
+                  className="flex flex-col gap-2 rounded-2xl bg-ink-900/5 p-3"
+                >
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium">{tool.name}</p>
+                    <div className="flex items-center gap-2">
+                      {saved ? (
+                        <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-xs text-emerald-700">
+                          Saved
+                        </span>
                       ) : null}
                     </div>
-                    {aiTestStatus[tool.id] ? (
-                      <p className="text-xs text-ink-500">{aiTestStatus[tool.id]}</p>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type={aiKeyVisible[tool.id] ? "text" : "password"}
+                      value={aiKeys[tool.id] ?? ""}
+                      onChange={(e) =>
+                        setAiKeys((prev) => ({ ...prev, [tool.id]: e.target.value }))
+                      }
+                      placeholder={
+                        saved
+                          ? `Saved — paste new ${tool.name} API key to update`
+                          : `Paste ${tool.name} API key`
+                      }
+                      className={`w-full rounded-2xl px-3 py-2 pr-12 text-sm ${
+                        saved
+                          ? "bg-ink-900/10 text-ink-900 dark:text-ink-900"
+                          : "bg-white/70 text-ink-900 dark:text-ink-900"
+                      }`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setAiKeyVisible((prev) => ({
+                          ...prev,
+                          [tool.id]: !prev[tool.id]
+                        }))
+                      }
+                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-ink-900/10 px-3 py-1 text-xs"
+                    >
+                      {aiKeyVisible[tool.id] ? "Hide" : "Show"}
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={() => saveAiKey(tool.id)}
+                      className="glass px-4 py-2 rounded-full text-sm"
+                    >
+                      {saved ? "Update" : "Add"}
+                    </button>
+                    {saved ? (
+                      <button
+                        onClick={() => testAiKey(tool.id)}
+                        className="rounded-full bg-ink-900/10 px-4 py-2 text-sm"
+                      >
+                        Test
+                      </button>
+                    ) : null}
+                    {saved ? (
+                      <button
+                        onClick={() => deleteAiKey(tool.id)}
+                        className="rounded-full bg-red-500/10 px-4 py-2 text-sm text-red-700"
+                      >
+                        Delete
+                      </button>
                     ) : null}
                   </div>
-                );
-              }
-            )}
-          </div>
-          {aiStatus ? <p className="text-xs text-ink-500">{aiStatus}</p> : null}
+                  {aiTestStatus[tool.id] ? (
+                    <p className="text-xs text-ink-500">{aiTestStatus[tool.id]}</p>
+                  ) : null}
+                </div>
+              );
+            }
+          )}
         </div>
-      ) : (
-        <div className="rounded-2xl bg-ink-900/5 p-5 space-y-2">
-          <p className="text-sm text-ink-600">AI Tools</p>
-          <p className="text-sm text-ink-500">
-            Connect Google first to enable AI tool setup.
-          </p>
-        </div>
-      )}
+        {aiStatus ? <p className="text-xs text-ink-500">{aiStatus}</p> : null}
+      </div>
     </div>
   );
 }

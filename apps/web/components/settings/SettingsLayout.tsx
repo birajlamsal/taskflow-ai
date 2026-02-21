@@ -134,7 +134,7 @@ export default function SettingsLayout({
                       href={item.href}
                       className={`rounded-2xl px-4 py-2 text-sm transition ${
                         active
-                          ? "bg-ink-900 text-white"
+                          ? "bg-white text-ink-900 shadow-sm"
                           : "text-ink-600 dark:text-ink-900 hover:bg-ink-900/10 dark:hover:bg-white/70"
                       }`}
                     >

@@ -31,38 +31,45 @@ export default function AICopilot() {
 
     useEffect(() => {
         if (!token) return;
-        fetch(`${API_URL}/ai/tools`)
-            .then(async (res) => {
-                const data = await res.json();
-                setAiTools(Array.isArray(data.tools) ? data.tools : []);
-            })
-            .catch(() => setAiTools([]));
+        const loadConfig = () => {
+            fetch(`${API_URL}/ai/tools`)
+                .then(async (res) => {
+                    const data = await res.json();
+                    setAiTools(Array.isArray(data.tools) ? data.tools : []);
+                })
+                .catch(() => setAiTools([]));
 
-        fetch(`${API_URL}/ai/keys`, {
-            headers: { Authorization: `Bearer ${token}` }
-        })
-            .then(async (res) => {
-                if (!res.ok) {
-                    setConfiguredTools([]);
-                    return;
-                }
-                const data = (await res.json()) as { tools?: string[] };
-                setConfiguredTools(Array.isArray(data.tools) ? data.tools : []);
+            fetch(`${API_URL}/ai/keys`, {
+                headers: { Authorization: `Bearer ${token}` }
             })
-            .catch(() => setConfiguredTools([]));
+                .then(async (res) => {
+                    if (!res.ok) {
+                        setConfiguredTools([]);
+                        return;
+                    }
+                    const data = (await res.json()) as { tools?: string[] };
+                    setConfiguredTools(Array.isArray(data.tools) ? data.tools : []);
+                })
+                .catch(() => setConfiguredTools([]));
 
-        fetch(`${API_URL}/google/status`, {
-            headers: { Authorization: `Bearer ${token}` }
-        })
-            .then(async (res) => {
-                if (!res.ok) {
-                    setGoogleConnected(false);
-                    return;
-                }
-                const data = (await res.json()) as { connected?: boolean };
-                setGoogleConnected(Boolean(data.connected));
+            fetch(`${API_URL}/google/status`, {
+                headers: { Authorization: `Bearer ${token}` }
             })
-            .catch(() => setGoogleConnected(false));
+                .then(async (res) => {
+                    if (!res.ok) {
+                        setGoogleConnected(false);
+                        return;
+                    }
+                    const data = (await res.json()) as { connected?: boolean };
+                    setGoogleConnected(Boolean(data.connected));
+                })
+                .catch(() => setGoogleConnected(false));
+        };
+
+        loadConfig();
+        const handler = () => loadConfig();
+        window.addEventListener("taskflow:ai-keys-updated", handler);
+        return () => window.removeEventListener("taskflow:ai-keys-updated", handler);
     }, [token]);
 
     useEffect(() => {
@@ -83,6 +90,10 @@ export default function AICopilot() {
     async function sendChat() {
         if (!token || !chat.trim()) return;
         if (!configuredTools.length || !configuredTools.includes(selectedTool)) {
+            setChatHistory((prev) => [
+                ...prev,
+                { role: "assistant", text: "Add an AI API key in Settings to use chat." }
+            ]);
             return;
         }
         const prompt = chat.trim();
@@ -116,7 +127,7 @@ export default function AICopilot() {
         }
     }
 
-    if (!googleConnected) return null;
+    if (!token) return null;
 
     return (
         <AnimatePresence>
@@ -167,6 +178,11 @@ export default function AICopilot() {
                                 </option>
                             )}
                         </select>
+                        {googleConnected === false ? (
+                            <p className="mt-2 text-[10px] text-ink-400">
+                                Google is not connected. Task actions may fail, but chat still works.
+                            </p>
+                        ) : null}
                     </div>
 
                     <div className="flex-1 overflow-y-auto pr-2 space-y-4 py-4 custom-scrollbar">
@@ -186,7 +202,7 @@ export default function AICopilot() {
                                     initial={{ opacity: 0, y: 10 }}
                                     animate={{ opacity: 1, y: 0 }}
                                     className={`max-w-[90%] rounded-[1.5rem] px-4 py-3 text-sm leading-relaxed ${msg.role === "user"
-                                        ? "ml-auto bg-accent-500/80 text-white shadow-lift"
+                                        ? "ml-auto bg-accent-500/80 text-ink-900 dark:text-white shadow-lift"
                                         : "mr-auto glass-card text-ink-700 dark:text-ink-200 shadow-sm"
                                         }`}
                                 >

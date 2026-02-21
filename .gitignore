@@ -27,3 +27,5 @@ apps/kotlinapp/app/build
 apps/kotlinapp/local.properties
 apps/kotlinapp/.idea
 *.iml
+taskflow-desktop
+taskflow-desktop

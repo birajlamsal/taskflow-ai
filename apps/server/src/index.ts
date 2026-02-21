@@ -89,6 +89,10 @@ const pendingAdds = new Map<
   }
 >();
 const lastSearchResults = new Map<string, string[]>();
+const pendingGeneral = new Map<
+  string,
+  { kind: "weather"; question: string; createdAt: number }
+>();
 const aiTools = [
   { id: "openai", name: "OpenAI" },
   { id: "anthropic", name: "Anthropic" },
@@ -296,6 +300,18 @@ async function getAiKeyFromDb(userId: string, toolSlug: string) {
   const enc = res.rows[0]?.api_key_encrypted;
   if (!enc) return null;
   return decrypt(enc);
+}
+
+async function deleteAiKeyFromDb(userId: string, toolSlug: string) {
+  if (!dbPool) return;
+  const toolId = await getToolDbId(toolSlug);
+  if (!toolId) {
+    throw new Error("Unknown tool");
+  }
+  await dbPool.query(
+    "delete from public.ai_provider_keys where user_id = $1 and tool_id = $2",
+    [userId, toolId]
+  );
 }
 
 async function getConfiguredToolSlugs(userId: string) {
@@ -750,7 +766,7 @@ app.patch("/tasks/:id", async (req, reply) => {
           title: updates.title,
           notes: updates.notes,
           due: updates.due,
-          status: updates.completed ? "completed" : undefined
+          status: updates.completed ? "completed" : "needsAction"
         })
       }
     );
@@ -1116,7 +1132,7 @@ function naiveParse(text: string): ChatCommand {
 function inferDueFromText(text: string) {
   const lower = text.toLowerCase();
   const now = new Date();
-  if (lower.includes("tomorrow")) {
+  if (lower.includes("tomorrow") || /tomor+ow|tomotow|tomm?or?ow|tmrw/.test(lower)) {
     const d = new Date(now);
     d.setDate(d.getDate() + 1);
     return d.toISOString();
@@ -1154,12 +1170,154 @@ function isTomorrow(due?: string) {
   return isSameDay(due, tomorrow);
 }
 
+function looksLikeTaskQuery(text: string) {
+  const lower = text.toLowerCase();
+  const taskKeywords = [
+    "task",
+    "tasks",
+    "todo",
+    "to do",
+    "list",
+    "add",
+    "remove",
+    "delete",
+    "complete",
+    "schedule",
+    "tomorrow",
+    "tomor",
+    "tmrw",
+    "today",
+    "missed",
+    "upcoming",
+    "due",
+    "to be done"
+  ];
+  return taskKeywords.some((k) => lower.includes(k));
+}
+
+function hasExplicitTaskIntent(text: string) {
+  const lower = text.toLowerCase();
+  const intentKeywords = [
+    "task",
+    "tasks",
+    "todo",
+    "to do",
+    "list",
+    "add",
+    "remove",
+    "delete",
+    "complete",
+    "schedule"
+  ];
+  return intentKeywords.some((k) => lower.includes(k));
+}
+
+function looksLikeGeneralQuery(text: string) {
+  const lower = text.toLowerCase();
+  const generalKeywords = [
+    "hello",
+    "hi",
+    "hey",
+    "weather",
+    "temperature",
+    "rain",
+    "news",
+    "who is",
+    "what is",
+    "why",
+    "how",
+    "joke",
+    "quote",
+    "define"
+  ];
+  return generalKeywords.some((k) => lower.includes(k));
+}
+
+function isWeatherQuestion(text: string) {
+  return text.toLowerCase().includes("weather");
+}
+
+function hasLocation(text: string) {
+  return /\b(in|at|of|for)\s+[a-zA-Z]/.test(text);
+}
+
+function hasTomorrow(text: string) {
+  const lower = text.toLowerCase();
+  return lower.includes("tomorrow") || /tomor+ow|tomotow|tomm?or?ow|tmrw/.test(lower);
+}
+
+function hasToday(text: string) {
+  return text.toLowerCase().includes("today");
+}
+
 app.post("/ai/command", async (req, reply) => {
   const user = requireAuth(req);
   if (!user) return reply.status(401).send({ error: "Unauthorized" });
   ensureSeed(user.id);
   const body = req.body as { text?: string; toolId?: string };
   if (!body?.text) return reply.status(400).send({ error: "Missing text" });
+
+  const toolId = body.toolId ?? "openai";
+  if (!aiTools.find((t) => t.id === toolId)) {
+    return reply.status(400).send({ error: "Unknown tool" });
+  }
+
+  if (isWeatherQuestion(body.text) && !hasExplicitTaskIntent(body.text)) {
+    if (!hasLocation(body.text)) {
+      pendingGeneral.set(user.id, { kind: "weather", question: body.text, createdAt: Date.now() });
+      return reply.send({ message: "Which location?" });
+    }
+    let userKey = userAiKeys.get(user.id)?.get(toolId);
+    if (!userKey) {
+      userKey = (await getAiKeyFromDb(user.id, toolId)) ?? undefined;
+      if (userKey) {
+        if (!userAiKeys.has(user.id)) userAiKeys.set(user.id, new Map());
+        userAiKeys.get(user.id)!.set(toolId, userKey);
+      }
+    }
+    if (toolId === "openai" && !userKey && !process.env.OPENAI_API_KEY) {
+      return reply.status(400).send({ error: "API key missing for openai" });
+    }
+    if (toolId !== "openai" && !userKey) {
+      return reply.status(400).send({ error: `API key missing for ${toolId}` });
+    }
+    try {
+      const replyText = await generalChatWithTool(body.text, toolId, userKey);
+      return reply.send({ message: replyText || "OK" });
+    } catch (err) {
+      return reply
+        .status(502)
+        .send({ error: err instanceof Error ? err.message : "AI failed" });
+    }
+  }
+
+  const pendingGen = pendingGeneral.get(user.id);
+  if (pendingGen) {
+    pendingGeneral.delete(user.id);
+    const combined = `${pendingGen.question} in ${body.text}`;
+    let userKey = userAiKeys.get(user.id)?.get(toolId);
+    if (!userKey) {
+      userKey = (await getAiKeyFromDb(user.id, toolId)) ?? undefined;
+      if (userKey) {
+        if (!userAiKeys.has(user.id)) userAiKeys.set(user.id, new Map());
+        userAiKeys.get(user.id)!.set(toolId, userKey);
+      }
+    }
+    if (toolId === "openai" && !userKey && !process.env.OPENAI_API_KEY) {
+      return reply.status(400).send({ error: "API key missing for openai" });
+    }
+    if (toolId !== "openai" && !userKey) {
+      return reply.status(400).send({ error: `API key missing for ${toolId}` });
+    }
+    try {
+      const replyText = await generalChatWithTool(combined, toolId, userKey);
+      return reply.send({ message: replyText || "OK" });
+    } catch (err) {
+      return reply
+        .status(502)
+        .send({ error: err instanceof Error ? err.message : "AI failed" });
+    }
+  }
 
   const pending = pendingAdds.get(user.id);
   if (pending) {
@@ -1246,12 +1404,8 @@ app.post("/ai/command", async (req, reply) => {
   }
 
   let command: ChatCommand;
+  let userKey = userAiKeys.get(user.id)?.get(toolId);
   try {
-    const toolId = body.toolId ?? "openai";
-    if (!aiTools.find((t) => t.id === toolId)) {
-      return reply.status(400).send({ error: "Unknown tool" });
-    }
-    let userKey = userAiKeys.get(user.id)?.get(toolId);
     if (!userKey) {
       userKey = (await getAiKeyFromDb(user.id, toolId)) ?? undefined;
       if (userKey) {
@@ -1270,7 +1424,29 @@ app.post("/ai/command", async (req, reply) => {
     if (err instanceof Error && err.message.includes("API key missing")) {
       return reply.status(400).send({ error: err.message });
     }
-    command = naiveParse(body.text);
+    if (looksLikeTaskQuery(body.text)) {
+      command = naiveParse(body.text);
+    } else {
+      try {
+        const replyText = await generalChatWithTool(body.text, toolId, userKey);
+        return reply.send({ message: replyText || "OK" });
+      } catch (chatErr) {
+        return reply.status(502).send({
+          error: chatErr instanceof Error ? chatErr.message : "AI failed"
+        });
+      }
+    }
+  }
+  if (hasTomorrow(body.text)) {
+    if (command.action === "list_today") {
+      command = { ...command, action: "search_tasks", query: "tomorrow" };
+    } else if (command.action === "search_tasks" && !command.query) {
+      command = { ...command, query: "tomorrow" };
+    }
+  } else if (hasToday(body.text)) {
+    if (command.action === "search_tasks" && !command.query) {
+      command = { ...command, action: "list_today" };
+    }
   }
   if (command.action === "add_task") {
     if (!command.title) {
@@ -1552,10 +1728,34 @@ app.post("/ai/keys", async (req, reply) => {
   return reply.send({ ok: true });
 });
 
+app.delete("/ai/keys", async (req, reply) => {
+  const user = requireAuth(req);
+  if (!user) return reply.status(401).send({ error: "Unauthorized" });
+  const toolId = (req.query as { toolId?: string }).toolId ?? "";
+  if (!toolId) return reply.status(400).send({ error: "toolId required" });
+  if (!aiTools.find((t) => t.id === toolId)) {
+    return reply.status(400).send({ error: "Unknown tool" });
+  }
+  try {
+    if (dbPool) {
+      await deleteAiKeyFromDb(user.id, toolId);
+    }
+    const userMap = userAiKeys.get(user.id);
+    if (userMap) userMap.delete(toolId);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to delete API key.";
+    return reply.status(500).send({ error: message });
+  }
+  return reply.send({ ok: true });
+});
+
 app.get("/ai/keys", async (req, reply) => {
   const user = requireAuth(req);
   if (!user) return reply.status(401).send({ error: "Unauthorized" });
   const tools = await getConfiguredToolSlugs(user.id);
+  if (process.env.OPENAI_API_KEY && !tools.includes("openai")) {
+    tools.push("openai");
+  }
   return reply.send({ tools });
 });
 
