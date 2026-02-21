@@ -4,7 +4,8 @@ A monorepo base that mirrors the TaskFlow desktop app behavior with web + mobile
 
 ## Structure
 - `apps/web` - Next.js App Router + Tailwind + Framer Motion
-- `apps/mobile` - Expo + NativeWind + Reanimated
+- `apps/mobile` - Expo + React Native
+- `apps/kotlinapp` - Native Android (Kotlin, Compose, Hilt, Retrofit)
 - `apps/server` - Fastify backend
 - `packages/shared` - types, zod schemas, provider interfaces
 
@@ -35,11 +36,12 @@ Supabase Auth env placeholders:
 - Server: `SUPABASE_JWT_SECRET` (used to verify JWTs)
 
 ## Notes
-- OAuth PKCE flow is scaffolded. Real exchange needs Google credentials and token persistence.
-- AI command uses OpenAI when configured; otherwise falls back to a safe heuristic parser.
+- OAuth and Google Tasks are handled via Supabase Google sign-in (web + mobile).
+- AI command uses user-provided API keys; no global fallback key required.
+- Expo app currently has device/runtime issues; the Kotlin app is the recommended mobile client until Expo is stable.
 
 ## Database schema (Supabase)
-SQL is provided in `apps/server/sql/supabase_schema.sql` for:
+SQL is provided in `table_formation/taskflow_supabase.sql` for:
 - `users`
 - `oauth_accounts` (encrypted Google tokens)
 - `ai_provider_keys` (encrypted per-user AI API keys)

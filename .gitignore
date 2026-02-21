@@ -20,3 +20,9 @@ ios/Pods
 ios/build
 android/build
 android/app/build
+apps/kotlinapp/.gradle
+apps/kotlinapp/build
+apps/kotlinapp/app/build
+apps/kotlinapp/local.properties
+apps/kotlinapp/.idea
+*.iml
