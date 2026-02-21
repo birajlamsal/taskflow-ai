@@ -8,6 +8,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 type Status = {
   server: string;
   db?: { configured?: boolean };
+  google?: { clientIdConfigured?: boolean };
   auth?: { supabaseConfigured?: boolean };
 };
 
@@ -80,6 +81,15 @@ export default function CheckScreen() {
                 status?.auth?.supabaseConfigured
                   ? "JWT secret configured"
                   : "SUPABASE_JWT_SECRET not set"
+              }
+            />
+            <StatusRow
+              label="Google OAuth"
+              ok={status?.google?.clientIdConfigured ?? null}
+              detail={
+                status?.google?.clientIdConfigured
+                  ? "GOOGLE_CLIENT_ID configured"
+                  : "GOOGLE_CLIENT_ID not set"
               }
             />
           </div>

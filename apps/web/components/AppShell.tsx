@@ -26,6 +26,13 @@ export default function AppShell() {
   const [input, setInput] = useState("");
   const [chat, setChat] = useState("");
   const [message, setMessage] = useState("Connect to start.");
+  const [displayName, setDisplayName] = useState<string | null>(null);
+  const [apiConnected, setApiConnected] = useState<boolean | null>(null);
+  const [apiStatus, setApiStatus] = useState<{
+    dbConfigured?: boolean;
+    authConfigured?: boolean;
+  } | null>(null);
+  const [googleConnected, setGoogleConnected] = useState<boolean | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -42,6 +49,77 @@ export default function AppShell() {
       listener.subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    supabase.auth.getUser().then(({ data, error }) => {
+      if (!active) return;
+      if (error || !data.user) {
+        setDisplayName(null);
+        return;
+      }
+      const meta = data.user.user_metadata ?? {};
+      const name =
+        meta.full_name ??
+        meta.name ??
+        data.user.email?.split("@")[0] ??
+        "there";
+      setDisplayName(name);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!token) return;
+    let active = true;
+    fetch(`${API_URL}/status`)
+      .then(async (res) => {
+        if (!active) return;
+        setApiConnected(res.ok);
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          db?: { configured?: boolean };
+          auth?: { supabaseConfigured?: boolean };
+        };
+        setApiStatus({
+          dbConfigured: data?.db?.configured,
+          authConfigured: data?.auth?.supabaseConfigured
+        });
+      })
+      .catch(() => {
+        if (!active) return;
+        setApiConnected(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [token]);
+
+  useEffect(() => {
+    if (!token) return;
+    let active = true;
+    fetch(`${API_URL}/google/status`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(async (res) => {
+        if (!active) return;
+        if (!res.ok) {
+          setGoogleConnected(false);
+          return;
+        }
+        const data = (await res.json()) as { connected?: boolean };
+        setGoogleConnected(Boolean(data.connected));
+      })
+      .catch(() => {
+        if (!active) return;
+        setGoogleConnected(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [token]);
 
   useEffect(() => {
     if (!authChecked) return;
@@ -138,21 +216,11 @@ export default function AppShell() {
             <p className="text-sm uppercase tracking-[0.3em] text-white/50">
               TaskFlow
             </p>
-            <h1 className="text-3xl font-semibold">Flow through tasks.</h1>
+            <h1 className="text-3xl font-semibold">
+              Hello{displayName ? `, ${displayName}` : ""}.
+            </h1>
+            <p className="text-sm text-white/60">Flow through tasks.</p>
           </div>
-          {token ? (
-            <div className="flex items-center gap-3">
-              <a
-                href="/settings"
-                className="text-sm text-white/70 hover:text-white"
-              >
-                Settings
-              </a>
-              <div className="text-sm text-white/70">Connected</div>
-            </div>
-          ) : (
-            <div className="text-sm text-white/70">Redirecting to login…</div>
-          )}
         </header>
 
         <motion.section
@@ -187,6 +255,44 @@ export default function AppShell() {
               </p>
               <p className="text-xs text-white/50">{message}</p>
             </div>
+
+            {apiConnected !== true || apiStatus?.dbConfigured === false ? (
+              <div className="glass rounded-2xl p-4 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">Connect the API</p>
+                  <p className="text-xs text-white/60">
+                    {apiConnected === false
+                      ? "Your backend is not reachable."
+                      : apiStatus?.dbConfigured === false
+                        ? "Database is not configured."
+                        : "Complete API configuration in Settings."}
+                  </p>
+                </div>
+                <a
+                  href="/settings"
+                  className="glass px-4 py-2 rounded-full text-sm"
+                >
+                  Connect API
+                </a>
+              </div>
+            ) : null}
+
+            {googleConnected === false ? (
+              <div className="glass rounded-2xl p-4 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">Connect Google</p>
+                  <p className="text-xs text-white/60">
+                    Link Google Tasks to sync your lists and tasks.
+                  </p>
+                </div>
+                <a
+                  href="/settings"
+                  className="glass px-4 py-2 rounded-full text-sm"
+                >
+                  Connect Google
+                </a>
+              </div>
+            ) : null}
 
             <div className="flex gap-2">
               <input

@@ -3,8 +3,11 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import crypto from "crypto";
+import fs from "fs";
+import path from "path";
 import fetch from "node-fetch";
 import jwt from "jsonwebtoken";
+import jwkToPem from "jwk-to-pem";
 import {
   chatCommandSchema,
   type ChatCommand,
@@ -30,12 +33,44 @@ const PORT = Number(process.env.PORT ?? 4000);
 const TOKEN_KEY = process.env.TOKEN_ENCRYPTION_KEY ?? "dev_insecure_key";
 const SESSION_SECRET = process.env.SESSION_SECRET ?? "dev_session_secret";
 const SUPABASE_JWT_SECRET = process.env.SUPABASE_JWT_SECRET ?? "";
+const SUPABASE_JWT_PUBLIC_KEY = process.env.SUPABASE_JWT_PUBLIC_KEY ?? "";
+const SUPABASE_JWKS_PATH =
+  process.env.SUPABASE_JWKS_PATH ?? path.join(process.cwd(), "jwks.json");
+
+function getSupabaseVerifyKey() {
+  if (SUPABASE_JWT_PUBLIC_KEY) {
+    return { key: SUPABASE_JWT_PUBLIC_KEY, alg: "RS256" as const };
+  }
+  if (fs.existsSync(SUPABASE_JWKS_PATH)) {
+    const raw = fs.readFileSync(SUPABASE_JWKS_PATH, "utf8");
+    const jwks = JSON.parse(raw) as { keys?: Array<Record<string, any>> };
+    const jwk = jwks.keys?.[0];
+    if (jwk) {
+      return {
+        key: jwkToPem(jwk),
+        alg: (jwk.alg ?? "RS256") as "RS256" | "ES256"
+      };
+    }
+  }
+  if (SUPABASE_JWT_SECRET) {
+    return { key: SUPABASE_JWT_SECRET, alg: "HS256" as const };
+  }
+  return null;
+}
 const USE_MOCK_AUTH = process.env.USE_MOCK_AUTH === "true" || !SUPABASE_JWT_SECRET;
 
 const users = new Map<string, User>();
 const sessions = new Map<string, string>();
 const taskLists = new Map<string, TaskList[]>();
 const tasks = new Map<string, Task[]>();
+const oauthStates = new Map<
+  string,
+  { userId: string; codeVerifier: string; createdAt: number }
+>();
+const userTokens = new Map<
+  string,
+  { access_token: string; refresh_token?: string; expires_in?: number }
+>();
 
 function encrypt(value: string) {
   const iv = crypto.randomBytes(12);
@@ -65,7 +100,7 @@ function signSession(userId: string) {
   return token;
 }
 
-function requireAuth(req: { headers: Record<string, string | undefined> }) {
+function getAuthInfo(req: { headers: Record<string, string | undefined> }) {
   const auth = req.headers.authorization ?? "";
   const token = auth.replace("Bearer ", "").trim();
   if (!token) return null;
@@ -76,9 +111,12 @@ function requireAuth(req: { headers: Record<string, string | undefined> }) {
     return users.get(userId) ?? null;
   }
 
-  if (!SUPABASE_JWT_SECRET) return null;
+  const verifyKey = getSupabaseVerifyKey();
+  if (!verifyKey) return null;
   try {
-    const payload = jwt.verify(token, SUPABASE_JWT_SECRET) as {
+    const payload = jwt.verify(token, verifyKey.key, {
+      algorithms: [verifyKey.alg]
+    }) as {
       sub?: string;
       email?: string;
       user_metadata?: { name?: string; full_name?: string; avatar_url?: string };
@@ -95,9 +133,15 @@ function requireAuth(req: { headers: Record<string, string | undefined> }) {
     users.set(user.id, user);
     ensureSeed(user.id);
     return user;
-  } catch {
-    return null;
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "JWT verify failed" } as any;
   }
+}
+
+function requireAuth(req: { headers: Record<string, string | undefined> }) {
+  const info = getAuthInfo(req) as any;
+  if (!info || info.error) return null;
+  return info as User;
 }
 
 function ensureSeed(userId: string) {
@@ -119,13 +163,23 @@ app.get("/status", async () => {
     db: {
       configured: Boolean(process.env.DATABASE_URL)
     },
+    google: {
+      clientIdConfigured: Boolean(process.env.GOOGLE_CLIENT_ID)
+    },
     auth: {
       supabaseConfigured: Boolean(process.env.SUPABASE_JWT_SECRET)
     }
   };
 });
 
-app.post("/auth/google/start", async () => {
+app.post("/auth/google/start", async (req, reply) => {
+  const authInfo = getAuthInfo(req) as any;
+  if (!authInfo || authInfo.error) {
+    return reply
+      .status(401)
+      .send({ error: authInfo?.error ? `Unauthorized: ${authInfo.error}` : "Unauthorized" });
+  }
+  const user = authInfo as User;
   if (USE_MOCK_AUTH) {
     return { authUrl: "mock://auth?state=demo" };
   }
@@ -136,7 +190,28 @@ app.post("/auth/google/start", async () => {
       error: "Google OAuth not configured. Set GOOGLE_CLIENT_ID and GOOGLE_REDIRECT_URI."
     };
   }
-  return { authUrl: "https://accounts.google.com/o/oauth2/v2/auth" };
+  const state = crypto.randomUUID();
+  const codeVerifier = crypto.randomBytes(32).toString("base64url");
+  const hash = crypto.createHash("sha256").update(codeVerifier).digest();
+  const codeChallenge = Buffer.from(hash).toString("base64url");
+  oauthStates.set(state, { userId: user.id, codeVerifier, createdAt: Date.now() });
+
+  const params = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    response_type: "code",
+    scope: [
+      "https://www.googleapis.com/auth/tasks",
+      "https://www.googleapis.com/auth/userinfo.email",
+      "https://www.googleapis.com/auth/userinfo.profile"
+    ].join(" "),
+    access_type: "offline",
+    prompt: "consent",
+    state,
+    code_challenge: codeChallenge,
+    code_challenge_method: "S256"
+  });
+  return { authUrl: `https://accounts.google.com/o/oauth2/v2/auth?${params}` };
 });
 
 app.post("/auth/google/callback", async (req) => {
@@ -160,6 +235,51 @@ app.post("/auth/google/callback", async (req) => {
   const encrypted = encrypt(body.code);
   void decrypt(encrypted);
   return { error: "OAuth exchange not configured" };
+});
+
+app.get("/auth/google/callback", async (req, reply) => {
+  const query = req.query as { code?: string; state?: string };
+  if (!query?.code || !query?.state) {
+    return reply.status(400).send({ error: "Missing code or state" });
+  }
+  const record = oauthStates.get(query.state);
+  if (!record) {
+    return reply.status(400).send({ error: "Invalid or expired state" });
+  }
+  oauthStates.delete(query.state);
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  const redirectUri = process.env.GOOGLE_REDIRECT_URI;
+  if (!clientId || !redirectUri) {
+    return reply.status(500).send({ error: "Google OAuth not configured" });
+  }
+
+  const tokenParams = new URLSearchParams({
+    client_id: clientId,
+    code: query.code,
+    code_verifier: record.codeVerifier,
+    grant_type: "authorization_code",
+    redirect_uri: redirectUri
+  });
+  if (clientSecret) tokenParams.set("client_secret", clientSecret);
+
+  const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: tokenParams
+  });
+  if (!tokenRes.ok) {
+    return reply.status(400).send({ error: "Token exchange failed" });
+  }
+  const tokenData = (await tokenRes.json()) as {
+    access_token: string;
+    refresh_token?: string;
+    expires_in?: number;
+  };
+
+  userTokens.set(record.userId, tokenData);
+  const webAppUrl = process.env.WEB_APP_URL ?? "http://localhost:3000";
+  return reply.redirect(`${webAppUrl}/settings?google=connected`);
 });
 
 app.get("/me", async (req, reply) => {
@@ -365,6 +485,45 @@ app.get("/availability/now", async (req, reply) => {
     available: true,
     message: "Calendar not connected. Assuming available."
   };
+});
+
+app.get("/google/status", async (req, reply) => {
+  const user = requireAuth(req);
+  if (!user) return reply.status(401).send({ error: "Unauthorized" });
+  const tokens = userTokens.get(user.id);
+  return {
+    connected: Boolean(tokens?.refresh_token || tokens?.access_token)
+  };
+});
+
+app.get("/auth/debug", async (req, reply) => {
+  const auth = req.headers.authorization ?? "";
+  const token = auth.replace("Bearer ", "").trim();
+  if (!token) return reply.status(401).send({ error: "Missing bearer token" });
+  if (!SUPABASE_JWT_SECRET && USE_MOCK_AUTH) {
+    const userId = sessions.get(token);
+    return reply.send({ mode: "mock", userId, ok: Boolean(userId) });
+  }
+  const verifyKey = getSupabaseVerifyKey();
+  if (!verifyKey) {
+    return reply
+      .status(400)
+      .send({
+        error:
+          "SUPABASE_JWT_SECRET or SUPABASE_JWT_PUBLIC_KEY or SUPABASE_JWKS_PATH not set"
+      });
+  }
+  try {
+    const payload = jwt.verify(token, verifyKey.key, {
+      algorithms: [verifyKey.alg]
+    });
+    return reply.send({ ok: true, payload });
+  } catch (err) {
+    return reply.status(401).send({
+      ok: false,
+      error: err instanceof Error ? err.message : "JWT verify failed"
+    });
+  }
 });
 
 app.listen({ port: PORT, host: "0.0.0.0" }).then(() => {

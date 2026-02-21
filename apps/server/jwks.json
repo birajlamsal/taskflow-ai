@@ -1,0 +1,23 @@
+{
+  "keys": [
+    {
+      "x": "v8g-U9ygZ0mirAeTYwzxSwN6v_ot-T-YZpi7WgXGcCE",
+      "y": "PM6XHCbcAmcAt8CF1FEAR_TdlwuO-KXh_bRz41ixVu0",
+      "alg": "ES256",
+      "crv": "P-256",
+      "ext": true,
+      "kid": "010508fd-9788-4c9e-963a-686af2276042",
+      "kty": "EC",
+      "key_ops": ["verify"]
+    },
+    {
+      "e": "AQAB",
+      "n": "zoAXdve6X4SiRsUcYnDuRlLg4vIE32PxEh_dreMt46IuFO9-bLDitPnze0mna01R1wfnD0fX-wGnf4drtP2zEmvUEdcJuver6QBl0te_oftCz9JUQvtwQXExPLX5BE-VABY8mRJNQICyifRJll9e79WvsGohBSO57IOTwntkzxGmRYB6N9wd9n__rarZwW-vkHDx-FBqsstXILI3gWlNPl9FBzqk40y4fcsocRHQ8INjRrIWsCFsb_qCK_UPZjNjQRtaOS_AowM455iXQRLxNnVuXTRHm8yxPN-XNl22v2B1bQ46EIp0m0ynlXbH4vi6Y3m9_aYURKbd6Ep1vNwzNw",
+      "alg": "RS256",
+      "ext": true,
+      "kid": "b640a30a-ad39-4772-b75f-3f93ca8673eb",
+      "kty": "RSA",
+      "key_ops": ["verify"]
+    }
+  ]
+}
