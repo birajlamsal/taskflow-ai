@@ -1,8 +1,9 @@
 import "./globals.css";
-import { Sora } from "next/font/google";
+import { Manrope, Space_Grotesk } from "next/font/google";
 import Navbar from "../components/Navbar";
 
-const sora = Sora({ subsets: ["latin"] });
+const manrope = Manrope({ subsets: ["latin"] });
+const spaceGrotesk = Space_Grotesk({ subsets: ["latin"], variable: "--font-display" });
 
 export const metadata = {
   title: "TaskFlow",
@@ -15,8 +16,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body className={sora.className}>
+    <html lang="en" className={spaceGrotesk.variable}>
+      <body className={manrope.className}>
         <Navbar />
         {children}
       </body>

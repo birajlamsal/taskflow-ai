@@ -55,13 +55,13 @@ export default function LoginScreen() {
           transition={{ duration: 0.4 }}
         >
           <div className="space-y-6">
-            <p className="text-xs uppercase tracking-[0.3em] text-white/60">
+            <p className="text-xs uppercase tracking-[0.3em] text-ink-500">
               TaskFlow Auth
             </p>
             <h1 className="text-4xl font-semibold leading-tight">
               Connect Google Tasks securely.
             </h1>
-            <p className="text-white/70">
+            <p className="text-ink-600">
               Auth is handled by Supabase. Your session token is used to access
               the API securely.
             </p>
@@ -70,14 +70,14 @@ export default function LoginScreen() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="Email"
-                className="w-full rounded-lg bg-white/10 px-3 py-2 text-sm"
+                className="w-full rounded-lg bg-ink-900/5 px-3 py-2 text-sm"
               />
               <input
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Password"
                 type="password"
-                className="w-full rounded-lg bg-white/10 px-3 py-2 text-sm"
+                className="w-full rounded-lg bg-ink-900/5 px-3 py-2 text-sm"
               />
             </div>
             <button
@@ -87,21 +87,21 @@ export default function LoginScreen() {
             >
               {loading ? "Working..." : "Sign in"}
             </button>
-            <p className="text-xs text-white/60">{message}</p>
+            <p className="text-xs text-ink-500">{message}</p>
           </div>
 
           <div className="space-y-4">
             <div className="glass rounded-2xl p-5">
-              <p className="text-sm text-white/70">Stored server-side</p>
-              <ul className="mt-3 space-y-2 text-sm text-white/60">
+              <p className="text-sm text-ink-600">Stored server-side</p>
+              <ul className="mt-3 space-y-2 text-sm text-ink-500">
                 <li>Encrypted Google refresh token</li>
                 <li>User profile (email + name)</li>
                 <li>Optional AI provider API key</li>
               </ul>
             </div>
             <div className="glass rounded-2xl p-5">
-              <p className="text-sm text-white/70">Need the schema?</p>
-              <p className="mt-2 text-sm text-white/60">
+              <p className="text-sm text-ink-600">Need the schema?</p>
+              <p className="mt-2 text-sm text-ink-500">
                 See `apps/server/sql/supabase_schema.sql` for Supabase SQL.
               </p>
             </div>

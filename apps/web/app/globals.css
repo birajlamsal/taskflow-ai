@@ -3,16 +3,43 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
 }
 
 body {
-  @apply bg-night text-white min-h-screen;
-  font-family: "Sora", system-ui, sans-serif;
+  @apply antialiased bg-pearl-50 text-ink-900 min-h-screen;
+  font-family: "Manrope", system-ui, sans-serif;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(40, 50, 74, 0.25);
+  border-radius: 999px;
 }
 
 .glass {
-  background: rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  @apply bg-white/70 backdrop-blur-xl border border-white/40 shadow-card;
+}
+
+.glass-card {
+  @apply bg-white/70 backdrop-blur-xl border border-white/40 shadow-card;
+}
+
+.primary-button {
+  @apply inline-flex items-center justify-center rounded-full px-6 py-3 text-sm font-semibold transition-all duration-300;
+}
+
+.primary-button.glow {
+  @apply bg-ink-900 text-white shadow-glow hover:shadow-lift;
 }

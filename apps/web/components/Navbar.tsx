@@ -30,43 +30,57 @@ export default function Navbar() {
     router.push("/login");
   }
 
+  function toggleChat() {
+    window.dispatchEvent(new CustomEvent("taskflow:toggle-chat"));
+  }
+
   return (
     <div className="fixed inset-x-0 top-0 z-50">
       <div className="mx-auto max-w-6xl px-6 pt-4">
         <div className="glass rounded-full px-5 py-3 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Link href="/" className="text-sm font-semibold">
+            <Link href="/" className="text-sm font-semibold text-ink-900">
               TaskFlow
             </Link>
             <Link
               href="/"
-              className={`text-xs ${pathname === "/" ? "text-white" : "text-white/60"}`}
+              className={`text-xs ${
+                pathname === "/" ? "text-ink-900" : "text-ink-600"
+              }`}
             >
               Dashboard
             </Link>
             <Link
               href="/settings"
               className={`text-xs ${
-                pathname === "/settings" ? "text-white" : "text-white/60"
+                pathname === "/settings" ? "text-ink-900" : "text-ink-600"
               }`}
             >
               Settings
             </Link>
             <Link
               href="/check"
-              className={`text-xs ${pathname === "/check" ? "text-white" : "text-white/60"}`}
+              className={`text-xs ${
+                pathname === "/check" ? "text-ink-900" : "text-ink-600"
+              }`}
             >
               Check
             </Link>
           </div>
 
           <div className="flex items-center gap-3">
+            <button
+              onClick={toggleChat}
+              className="text-xs text-ink-600 hover:text-ink-900"
+            >
+              Chat
+            </button>
             {!authed ? (
-              <Link href="/login" className="text-xs text-white/70 hover:text-white">
+              <Link href="/login" className="text-xs text-ink-600 hover:text-ink-900">
                 Login
               </Link>
             ) : (
-              <button onClick={logout} className="text-xs text-white/70 hover:text-white">
+              <button onClick={logout} className="text-xs text-ink-600 hover:text-ink-900">
                 Logout
               </button>
             )}
