@@ -40,6 +40,12 @@ Supabase Auth env placeholders:
 - AI command uses user-provided API keys; no global fallback key required.
 - Expo app currently has device/runtime issues; the Kotlin app is the recommended mobile client until Expo is stable.
 
+## AI Tools Used (Project Build)
+Highlighted tools used during development:
+- ChatGPT Plus (Codex)
+- Google Gemini AI Pro
+- GitHub Copilot Pro
+
 ## Database schema (Supabase)
 SQL is provided in `table_formation/taskflow_supabase.sql` for:
 - `users`
